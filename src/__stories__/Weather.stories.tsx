@@ -14,20 +14,86 @@ import '../WeatherCard/WeatherCard.styles';
 
 // Import sample data
 import weatherEntity from './weatherEntity.json';
-import dailyForecast from './weatherForecastDaily.json';
-import hourlyForecast from './weatherForecastHourly.json';
 
 // Config
 const config: WeatherConfig = {
   entity: 'weather.forecast_home',
 };
 
+// ============================================================================
+// Relative-Date Helpers
+// ============================================================================
+// All story dates are anchored to "today" so the WeatherContext's future-only
+// filter (WeatherContext.tsx:144) doesn't drop everything as past.
+
+/** Today at the given local hour:minute. */
+function todayAt(hour: number, minute = 0): Date {
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+/** Today + dayOffset days at the given local hour:minute. */
+function dayAt(dayOffset: number, hour: number, minute = 0): Date {
+  const d = todayAt(hour, minute);
+  d.setDate(d.getDate() + dayOffset);
+  return d;
+}
+
+/** 7-day daily forecast starting today, with varied conditions and temps. */
+function generateDailyForecast(): WeatherForecast[] {
+  const pattern: Array<{ condition: string; high: number; low: number; precip: number }> = [
+    { condition: 'sunny', high: 72, low: 55, precip: 0 },
+    { condition: 'partlycloudy', high: 75, low: 58, precip: 0 },
+    { condition: 'cloudy', high: 68, low: 56, precip: 0.1 },
+    { condition: 'rainy', high: 64, low: 54, precip: 0.6 },
+    { condition: 'partlycloudy', high: 70, low: 55, precip: 0.1 },
+    { condition: 'sunny', high: 76, low: 58, precip: 0 },
+    { condition: 'sunny', high: 78, low: 60, precip: 0 },
+  ];
+  return pattern.map((p, i) => ({
+    datetime: dayAt(i, 0, 0).toISOString(),
+    condition: p.condition,
+    temperature: p.high,
+    templow: p.low,
+    precipitation_probability: p.precip > 0 ? 80 : 10,
+    precipitation: p.precip,
+    cloud_coverage: p.condition === 'cloudy' || p.condition === 'rainy' ? 90 : 30,
+    humidity: 50,
+    wind_speed: 8,
+    wind_bearing: 180,
+  }));
+}
+
+/** 12-hour forecast starting at the next whole hour. Used by the Default story. */
+function generateDefaultHourlyForecast(): WeatherForecast[] {
+  const start = new Date();
+  start.setHours(start.getHours() + 1, 0, 0, 0);
+  return Array.from({ length: 12 }, (_, i) => {
+    const date = new Date(start);
+    date.setHours(start.getHours() + i);
+    const hourOfDay = date.getHours();
+    const tempFactor = Math.sin(((hourOfDay - 6) / 24) * Math.PI);
+    return {
+      datetime: date.toISOString(),
+      condition: i < 4 ? 'sunny' : i < 8 ? 'partlycloudy' : 'cloudy',
+      temperature: Math.round(60 + 20 * Math.max(0, tempFactor)),
+      cloud_coverage: 30 + i * 5,
+      precipitation: 0,
+      precipitation_probability: 10,
+      wind_speed: 5,
+      wind_bearing: 180,
+      humidity: 55,
+    };
+  });
+}
+
 // Default sun times (around 6am sunrise, 6pm sunset in UTC for simplicity)
 const defaultSunTimes: SunTimes = {
-  sunrise: new Date('2026-01-18T06:00:00Z'), // 6am UTC
-  sunset: new Date('2026-01-18T18:00:00Z'), // 6pm UTC
-  dawn: new Date('2026-01-18T05:30:00Z'),
-  dusk: new Date('2026-01-18T18:30:00Z'),
+  sunrise: todayAt(6), // 6am UTC
+  sunset: todayAt(18), // 6pm UTC
+  dawn: todayAt(5, 30),
+  dusk: todayAt(18, 30),
 };
 
 // ============================================================================
@@ -165,8 +231,8 @@ export const Default: Story = {
   args: {
     config,
     entity: weatherEntity as unknown as WeatherEntity,
-    hourlyForecast: hourlyForecast as WeatherForecast[],
-    dailyForecast: dailyForecast as WeatherForecast[],
+    hourlyForecast: generateDefaultHourlyForecast(),
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -185,13 +251,13 @@ export const IceLightFreeze: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 32 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-18T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['cloudy'],
       tempRange: [30, 34],
       cloudCoverage: 80,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -206,14 +272,14 @@ export const IceDeepFreeze: Story = {
       attributes: { ...weatherEntity.attributes, temperature: -10 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-18T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['snowy'],
       tempRange: [-15, -5],
       cloudCoverage: 100,
       precipitation: 0.5,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -232,14 +298,14 @@ export const PuddlesLightRain: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 55 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-18T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['rainy'],
       tempRange: [50, 58],
       cloudCoverage: 90,
       precipitation: 0.5,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -254,7 +320,7 @@ export const PuddlesHeavyRain: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 60 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-18T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['pouring'],
       tempRange: [55, 62],
@@ -262,7 +328,7 @@ export const PuddlesHeavyRain: Story = {
       precipitation: 5,
       windSpeed: 15,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -281,7 +347,7 @@ export const WindyDay: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 55, wind_speed: 25 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-03-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['partlycloudy', 'cloudy', 'partlycloudy'],
       tempRange: [50, 60],
@@ -289,7 +355,7 @@ export const WindyDay: Story = {
       windSpeed: 25,
       windBearing: 270, // West wind
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -304,7 +370,7 @@ export const StormyWind: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 65, wind_speed: 35 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-04-15T14:00:00Z'),
+      startDate: todayAt(14),
       hours: 12,
       conditions: ['rainy', 'lightning-rainy', 'pouring', 'rainy'],
       tempRange: [58, 68],
@@ -313,7 +379,7 @@ export const StormyWind: Story = {
       windSpeed: 35,
       windBearing: 180, // South wind
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -328,18 +394,18 @@ export const NightTime: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 45 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-18T22:00:00Z'), // 10pm UTC (night)
+      startDate: todayAt(22), // 10pm UTC (night)
       hours: 8,
       conditions: ['clear-night'],
       tempRange: [40, 48],
       cloudCoverage: 5,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     sunTimes: {
-      sunrise: new Date('2026-01-19T07:00:00Z'), // Next morning
-      sunset: new Date('2026-01-18T17:00:00Z'), // Already set
-      dawn: new Date('2026-01-19T06:30:00Z'),
-      dusk: new Date('2026-01-18T17:30:00Z'),
+      sunrise: dayAt(1, 7), // Next morning
+      sunset: todayAt(17), // Already set
+      dawn: dayAt(1, 6, 30),
+      dusk: todayAt(17, 30),
     },
     fontSize: 'medium',
   },
@@ -359,18 +425,18 @@ export const SandHotDay: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 95 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-07-18T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [88, 98],
       cloudCoverage: 5,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     sunTimes: {
-      sunrise: new Date('2026-07-18T10:00:00Z'),
-      sunset: new Date('2026-07-19T01:00:00Z'),
-      dawn: new Date('2026-07-18T09:30:00Z'),
-      dusk: new Date('2026-07-19T01:30:00Z'),
+      sunrise: todayAt(10),
+      sunset: dayAt(1, 1),
+      dawn: todayAt(9, 30),
+      dusk: dayAt(1, 1, 30),
     },
     fontSize: 'medium',
   },
@@ -386,18 +452,18 @@ export const SandExtremeHeat: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 110 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-07-18T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [100, 115],
       cloudCoverage: 0,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     sunTimes: {
-      sunrise: new Date('2026-07-18T10:00:00Z'),
-      sunset: new Date('2026-07-19T01:00:00Z'),
-      dawn: new Date('2026-07-18T09:30:00Z'),
-      dusk: new Date('2026-07-19T01:30:00Z'),
+      sunrise: todayAt(10),
+      sunset: dayAt(1, 1),
+      dawn: todayAt(9, 30),
+      dusk: dayAt(1, 1, 30),
     },
     fontSize: 'medium',
   },
@@ -417,19 +483,19 @@ export const SpringNorthern: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 68 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-04-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny', 'partlycloudy', 'sunny'],
       tempRange: [58, 72],
       cloudCoverage: 20,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: 40, // Northern hemisphere
     sunTimes: {
-      sunrise: new Date('2026-04-15T10:30:00Z'),
-      sunset: new Date('2026-04-15T23:30:00Z'),
-      dawn: new Date('2026-04-15T10:00:00Z'),
-      dusk: new Date('2026-04-16T00:00:00Z'),
+      sunrise: todayAt(10, 30),
+      sunset: todayAt(23, 30),
+      dawn: todayAt(10),
+      dusk: dayAt(1, 0),
     },
     fontSize: 'medium',
   },
@@ -445,19 +511,19 @@ export const SummerNorthern: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 78 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-07-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [70, 85],
       cloudCoverage: 10,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: 40,
     sunTimes: {
-      sunrise: new Date('2026-07-15T09:30:00Z'),
-      sunset: new Date('2026-07-16T00:30:00Z'),
-      dawn: new Date('2026-07-15T09:00:00Z'),
-      dusk: new Date('2026-07-16T01:00:00Z'),
+      sunrise: todayAt(9, 30),
+      sunset: dayAt(1, 0, 30),
+      dawn: todayAt(9),
+      dusk: dayAt(1, 1),
     },
     fontSize: 'medium',
   },
@@ -473,19 +539,19 @@ export const FallNorthern: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 58 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-10-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['partlycloudy', 'sunny', 'partlycloudy'],
       tempRange: [48, 62],
       cloudCoverage: 40,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: 40,
     sunTimes: {
-      sunrise: new Date('2026-10-15T11:00:00Z'),
-      sunset: new Date('2026-10-15T22:00:00Z'),
-      dawn: new Date('2026-10-15T10:30:00Z'),
-      dusk: new Date('2026-10-15T22:30:00Z'),
+      sunrise: todayAt(11),
+      sunset: todayAt(22),
+      dawn: todayAt(10, 30),
+      dusk: todayAt(22, 30),
     },
     fontSize: 'medium',
   },
@@ -501,13 +567,13 @@ export const WinterNorthernNice: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 45 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [38, 50],
       cloudCoverage: 10,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: 40,
     fontSize: 'medium',
   },
@@ -527,19 +593,19 @@ export const SpringSouthern: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 68 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-10-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny', 'partlycloudy'],
       tempRange: [58, 72],
       cloudCoverage: 20,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: -34, // Southern hemisphere (Sydney-ish)
     sunTimes: {
-      sunrise: new Date('2026-10-15T19:00:00Z'), // ~5am local
-      sunset: new Date('2026-10-16T08:00:00Z'), // ~6pm local
-      dawn: new Date('2026-10-15T18:30:00Z'),
-      dusk: new Date('2026-10-16T08:30:00Z'),
+      sunrise: todayAt(19), // ~5am local
+      sunset: dayAt(1, 8), // ~6pm local
+      dawn: todayAt(18, 30),
+      dusk: dayAt(1, 8, 30),
     },
     fontSize: 'medium',
   },
@@ -555,19 +621,19 @@ export const SummerSouthern: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 78 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-01-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [70, 85],
       cloudCoverage: 5,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: -34,
     sunTimes: {
-      sunrise: new Date('2026-01-15T18:00:00Z'),
-      sunset: new Date('2026-01-16T09:00:00Z'),
-      dawn: new Date('2026-01-15T17:30:00Z'),
-      dusk: new Date('2026-01-16T09:30:00Z'),
+      sunrise: todayAt(18),
+      sunset: dayAt(1, 9),
+      dawn: todayAt(17, 30),
+      dusk: dayAt(1, 9, 30),
     },
     fontSize: 'medium',
   },
@@ -583,19 +649,19 @@ export const FallSouthern: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 58 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-04-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['partlycloudy', 'sunny'],
       tempRange: [50, 62],
       cloudCoverage: 35,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: -34,
     sunTimes: {
-      sunrise: new Date('2026-04-15T20:00:00Z'),
-      sunset: new Date('2026-04-16T07:00:00Z'),
-      dawn: new Date('2026-04-15T19:30:00Z'),
-      dusk: new Date('2026-04-16T07:30:00Z'),
+      sunrise: todayAt(20),
+      sunset: dayAt(1, 7),
+      dawn: todayAt(19, 30),
+      dusk: dayAt(1, 7, 30),
     },
     fontSize: 'medium',
   },
@@ -611,19 +677,19 @@ export const WinterSouthernNice: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 55 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-07-15T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [45, 60],
       cloudCoverage: 15,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     latitude: -34,
     sunTimes: {
-      sunrise: new Date('2026-07-15T21:00:00Z'),
-      sunset: new Date('2026-07-16T07:00:00Z'),
-      dawn: new Date('2026-07-15T20:30:00Z'),
-      dusk: new Date('2026-07-16T07:30:00Z'),
+      sunrise: todayAt(21),
+      sunset: dayAt(1, 7),
+      dawn: todayAt(20, 30),
+      dusk: dayAt(1, 7, 30),
     },
     fontSize: 'medium',
   },
@@ -644,7 +710,7 @@ export const DayToNightTransition: Story = {
     } as unknown as WeatherEntity,
     hourlyForecast: (() => {
       const forecast: WeatherForecast[] = [];
-      const start = new Date('2026-04-15T14:00:00'); // 2pm
+      const start = todayAt(14); // 2pm
 
       for (let i = 0; i < 12; i++) {
         const date = new Date(start);
@@ -669,12 +735,12 @@ export const DayToNightTransition: Story = {
       }
       return forecast;
     })(),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     sunTimes: {
-      sunrise: new Date('2026-04-15T10:30:00Z'),
-      sunset: new Date('2026-04-15T23:00:00Z'), // 7pm local
-      dawn: new Date('2026-04-15T10:00:00Z'),
-      dusk: new Date('2026-04-15T23:30:00Z'),
+      sunrise: todayAt(10, 30),
+      sunset: todayAt(23), // 7pm local
+      dawn: todayAt(10),
+      dusk: todayAt(23, 30),
     },
     fontSize: 'medium',
   },
@@ -691,7 +757,7 @@ export const ApproachingStorm: Story = {
     } as unknown as WeatherEntity,
     hourlyForecast: (() => {
       const forecast: WeatherForecast[] = [];
-      const start = new Date('2026-05-15T12:00:00');
+      const start = todayAt(12);
       const conditions = [
         'sunny',
         'sunny',
@@ -727,7 +793,7 @@ export const ApproachingStorm: Story = {
       }
       return forecast;
     })(),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -743,7 +809,7 @@ export const ColdFront: Story = {
     } as unknown as WeatherEntity,
     hourlyForecast: (() => {
       const forecast: WeatherForecast[] = [];
-      const start = new Date('2026-11-15T10:00:00');
+      const start = todayAt(10);
 
       for (let i = 0; i < 12; i++) {
         const date = new Date(start);
@@ -766,7 +832,7 @@ export const ColdFront: Story = {
       }
       return forecast;
     })(),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -781,19 +847,19 @@ export const HeatWave: Story = {
       attributes: { ...weatherEntity.attributes, temperature: 105 },
     } as unknown as WeatherEntity,
     hourlyForecast: generateHourlyForecast({
-      startDate: new Date('2026-07-25T08:00:00'),
+      startDate: todayAt(8),
       hours: 12,
       conditions: ['sunny'],
       tempRange: [95, 110],
       cloudCoverage: 0,
       windSpeed: 3,
     }),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     sunTimes: {
-      sunrise: new Date('2026-07-25T09:30:00Z'),
-      sunset: new Date('2026-07-26T00:30:00Z'),
-      dawn: new Date('2026-07-25T09:00:00Z'),
-      dusk: new Date('2026-07-26T01:00:00Z'),
+      sunrise: todayAt(9, 30),
+      sunset: dayAt(1, 0, 30),
+      dawn: todayAt(9),
+      dusk: dayAt(1, 1),
     },
     fontSize: 'medium',
   },
@@ -810,7 +876,7 @@ export const MixedPrecipitation: Story = {
     } as unknown as WeatherEntity,
     hourlyForecast: (() => {
       const forecast: WeatherForecast[] = [];
-      const start = new Date('2026-02-15T08:00:00');
+      const start = todayAt(8);
 
       for (let i = 0; i < 12; i++) {
         const date = new Date(start);
@@ -833,7 +899,7 @@ export const MixedPrecipitation: Story = {
       }
       return forecast;
     })(),
-    dailyForecast: dailyForecast as WeatherForecast[],
+    dailyForecast: generateDailyForecast(),
     fontSize: 'medium',
   },
 };
@@ -847,8 +913,8 @@ export const SmallSize: Story = {
   args: {
     config,
     entity: weatherEntity as unknown as WeatherEntity,
-    hourlyForecast: hourlyForecast as WeatherForecast[],
-    dailyForecast: dailyForecast as WeatherForecast[],
+    hourlyForecast: generateDefaultHourlyForecast(),
+    dailyForecast: generateDailyForecast(),
     fontSize: 'small',
   },
 };
@@ -858,8 +924,8 @@ export const LargeSize: Story = {
   args: {
     config,
     entity: weatherEntity as unknown as WeatherEntity,
-    hourlyForecast: hourlyForecast as WeatherForecast[],
-    dailyForecast: dailyForecast as WeatherForecast[],
+    hourlyForecast: generateDefaultHourlyForecast(),
+    dailyForecast: generateDailyForecast(),
     fontSize: 'large',
   },
 };
