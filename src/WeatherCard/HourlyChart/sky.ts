@@ -1,0 +1,536 @@
+// ============================================================================
+// Sky Rendering for Hourly Chart
+// Draws sky background with vertical fade, stars (night), and clouds (day)
+// ============================================================================
+
+import type { SunTimes, WeatherForecast } from '../WeatherContext';
+import { blurCanvasInPlace, supportsNativeBlur } from './blur';
+import { createTemperaturePositioner } from './canvasHelpers';
+import { type Bounds, generatePoints } from './generatePoints';
+import { createRng } from './random';
+// ============================================================================
+// Constants
+// ============================================================================
+
+const COLORS = {
+  dayClear: '#44DAFF', // Bright sky blue
+  dayCloudy: '#8A97A8', // Cool grey
+  nightClear: '#2D1B4E', // Deep violet
+  nightCloudy: '#2D1B4E', // Dark charcoal
+};
+
+// Blur radius for temperature mask (in pixels)
+const MASK_BLUR_RADIUS = 12;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Determine if a given datetime is during daytime based on sunrise/sunset
+ * Only compares time-of-day (hours/minutes/seconds), not the full date
+ */
+function isDaytime(datetime: string, sunTimes: SunTimes): boolean {
+  const date = new Date(datetime);
+
+  // Default to daytime if sun times not available
+  if (!sunTimes.sunrise || !sunTimes.sunset) {
+    const hour = date.getHours();
+    return hour >= 6 && hour < 18;
+  }
+
+  // Extract time-of-day components (hours, minutes, seconds, milliseconds)
+  const timeOfDay =
+    date.getHours() * 3600000 +
+    date.getMinutes() * 60000 +
+    date.getSeconds() * 1000 +
+    date.getMilliseconds();
+  const sunriseTime =
+    sunTimes.sunrise.getHours() * 3600000 +
+    sunTimes.sunrise.getMinutes() * 60000 +
+    sunTimes.sunrise.getSeconds() * 1000 +
+    sunTimes.sunrise.getMilliseconds();
+  const sunsetTime =
+    sunTimes.sunset.getHours() * 3600000 +
+    sunTimes.sunset.getMinutes() * 60000 +
+    sunTimes.sunset.getSeconds() * 1000 +
+    sunTimes.sunset.getMilliseconds();
+
+  return timeOfDay >= sunriseTime && timeOfDay < sunsetTime;
+}
+
+/**
+ * Interpolate between two hex colors based on a factor (0 to 1)
+ */
+function interpolateColor(color1: string, color2: string, factor: number): string {
+  const c1 = hexToRgb(color1);
+  const c2 = hexToRgb(color2);
+
+  const r = Math.round(c1.r + (c2.r - c1.r) * factor);
+  const g = Math.round(c1.g + (c2.g - c1.g) * factor);
+  const b = Math.round(c1.b + (c2.b - c1.b) * factor);
+
+  return rgbToHex(r, g, b);
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+        r: Number.parseInt(result[1], 16),
+        g: Number.parseInt(result[2], 16),
+        b: Number.parseInt(result[3], 16),
+      }
+    : { r: 0, g: 0, b: 0 };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Get the color for a specific hour based on cloud coverage and day/night
+ */
+function getHourColor(
+  datetime: string,
+  cloudCoverage: number | undefined,
+  sunTimes: SunTimes,
+): string {
+  const isDay = isDaytime(datetime, sunTimes);
+  const coverage = (cloudCoverage ?? 50) / 100; // Convert to 0-1 range
+
+  if (isDay) {
+    // Interpolate between clear blue and cloudy grey
+    return interpolateColor(COLORS.dayClear, COLORS.dayCloudy, coverage);
+  }
+  // Interpolate between clear violet and cloudy dark charcoal
+  return interpolateColor(COLORS.nightClear, COLORS.nightCloudy, coverage);
+}
+
+/**
+ * Draw an emoji at a specific point
+ */
+function drawEmoji(
+  ctx: CanvasRenderingContext2D,
+  emoji: string,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  ctx.save();
+  ctx.fillStyle = 'white';
+  ctx.font = `${size}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, x, y);
+  ctx.restore();
+}
+
+/**
+ * Transform points to be denser near the top of the bounds
+ * Uses a power function to compress Y coordinates toward the top
+ *
+ * @param points - Array of points to transform
+ * @param bounds - Bounding box for the transformation
+ * @param exponent - Power function exponent (default: 2.5, higher = more compression)
+ * @returns Transformed points with compressed Y coordinates
+ */
+function transformPointsDenserAtTop(
+  points: Array<{ x: number; y: number }>,
+  bounds: Bounds,
+  exponent = 2.5,
+): Array<{ x: number; y: number }> {
+  return points.map((point) => {
+    // Normalize y to 0-1 range relative to bounds
+    const normalizedY = (point.y - bounds.y) / bounds.height;
+    // Apply power function to compress toward top
+    // Higher exponent = more compression at top
+    const compressedY = normalizedY ** exponent;
+    // Scale back to actual coordinates
+    return {
+      x: point.x,
+      y: bounds.y + compressedY * bounds.height,
+    };
+  });
+}
+
+// ============================================================================
+// Main Drawing Functions
+// ============================================================================
+
+/**
+ * Draw the sky background with horizontal color gradient
+ * Preserves sunrise/sunset positioning - mask is applied separately
+ */
+export function drawSkyBackground(
+  canvas: HTMLCanvasElement,
+  forecast: WeatherForecast[],
+  sunTimes: SunTimes,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !forecast || forecast.length === 0) return;
+
+  // Get device pixel ratio and logical dimensions
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+
+  // Clear canvas
+  ctx.clearRect(0, 0, width, height);
+
+  // Create horizontal linear gradient (preserves sunrise/sunset positioning)
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+
+  // Get timeframe boundaries
+  const firstTime = new Date(forecast[0].datetime).getTime();
+  const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
+  const timeRange = lastTime - firstTime;
+
+  // Helper to convert timestamp to gradient position (0-1)
+  const getGradientPosition = (timestamp: number): number => {
+    if (timeRange === 0) return 0;
+    return (timestamp - firstTime) / timeRange;
+  };
+
+  // Collect all color stops
+  interface ColorStop {
+    position: number;
+    color: string;
+    isSunEvent?: boolean;
+    isAfterSun?: boolean;
+  }
+
+  const colorStops: ColorStop[] = [];
+
+  // Add color stops for each hour
+  forecast.forEach((hour, index) => {
+    const position = index / (forecast.length - 1);
+    const color = getHourColor(hour.datetime, hour.cloud_coverage, sunTimes);
+    colorStops.push({ position, color });
+  });
+  // Add sunrise transition if within range
+  if (sunTimes.sunrise) {
+    let sunriseTime = sunTimes.sunrise.getTime();
+
+    // If sunrise is in the past (before forecast start), add 24 hours to get tomorrow's sunrise
+    if (sunriseTime < firstTime) {
+      sunriseTime += 24 * 60 * 60 * 1000; // Add 24 hours in milliseconds
+    }
+
+    if (sunriseTime >= firstTime && sunriseTime <= lastTime) {
+      const sunrisePos = getGradientPosition(sunriseTime);
+      const offset = 0.001; // Small offset for sharp transition
+
+      // Get average cloud coverage around sunrise for smooth cloud transition
+      const avgCloudCoverage =
+        forecast.reduce((sum, h) => sum + (h.cloud_coverage ?? 50), 0) / forecast.length;
+
+      // Just before sunrise: night color
+      const nightColor = interpolateColor(
+        COLORS.nightClear,
+        COLORS.nightCloudy,
+        avgCloudCoverage / 100,
+      );
+      colorStops.push({
+        position: Math.max(0, sunrisePos - offset),
+        color: nightColor,
+        isSunEvent: true,
+      });
+
+      // Just after sunrise: day color
+      const dayColor = interpolateColor(COLORS.dayClear, COLORS.dayCloudy, avgCloudCoverage / 100);
+      colorStops.push({
+        position: Math.min(1, sunrisePos + offset),
+        color: dayColor,
+        isSunEvent: true,
+        isAfterSun: true,
+      });
+    }
+  }
+
+  // Add sunset transition if within range
+  if (sunTimes.sunset) {
+    let sunsetTime = sunTimes.sunset.getTime();
+
+    // If sunset is in the past (before forecast start), add 24 hours to get tomorrow's sunset
+    if (sunsetTime < firstTime) {
+      sunsetTime += 24 * 60 * 60 * 1000; // Add 24 hours in milliseconds
+    }
+
+    if (sunsetTime >= firstTime && sunsetTime <= lastTime) {
+      const sunsetPos = getGradientPosition(sunsetTime);
+      const offset = 0.001; // Small offset for sharp transition
+
+      // Get average cloud coverage around sunset for smooth cloud transition
+      const avgCloudCoverage =
+        forecast.reduce((sum, h) => sum + (h.cloud_coverage ?? 50), 0) / forecast.length;
+
+      // Just before sunset: day color
+      const dayColor = interpolateColor(COLORS.dayClear, COLORS.dayCloudy, avgCloudCoverage / 100);
+      colorStops.push({
+        position: Math.max(0, sunsetPos - offset),
+        color: dayColor,
+        isSunEvent: true,
+      });
+
+      // Just after sunset: night color
+      const nightColor = interpolateColor(
+        COLORS.nightClear,
+        COLORS.nightCloudy,
+        avgCloudCoverage / 100,
+      );
+      colorStops.push({
+        position: Math.min(1, sunsetPos + offset),
+        color: nightColor,
+        isSunEvent: true,
+        isAfterSun: true,
+      });
+    }
+  }
+
+  // Sort color stops by position
+  colorStops.sort((a, b) => a.position - b.position);
+
+  // Add all color stops to gradient
+  colorStops.forEach((stop) => {
+    gradient.addColorStop(stop.position, stop.color);
+  });
+
+  // Fill the entire canvas with the horizontal gradient
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+}
+
+/**
+ * Apply a blurred mask based on the temperature line to fade the sky
+ * Creates a soft transition that follows the temperature line contour
+ * Drawing the mask multiple times makes the fade more aggressive
+ */
+export function applyTemperatureMask(
+  canvas: HTMLCanvasElement,
+  forecast: WeatherForecast[],
+  pixelsPerDegree: number,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !forecast || forecast.length === 0) return;
+
+  // Get device pixel ratio and actual canvas dimensions
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr; // Logical width
+  const height = canvas.height / dpr; // Logical height
+
+  // Use the temperature positioner to get line positions
+  const { getTempY } = createTemperaturePositioner(forecast, height, pixelsPerDegree);
+
+  // Calculate x position for each hour
+  const getHourX = (index: number): number => {
+    return (index / (forecast.length - 1)) * width;
+  };
+
+  // Create offscreen canvas for the shape (account for device pixel ratio)
+  const shapeCanvas = document.createElement('canvas');
+  const shapeWidth = (width + MASK_BLUR_RADIUS * 2) * dpr;
+  const shapeHeight = height * dpr;
+  shapeCanvas.width = shapeWidth;
+  shapeCanvas.height = shapeHeight;
+  const shapeCtx = shapeCanvas.getContext('2d');
+  if (!shapeCtx) return;
+  // Don't scale - draw directly in physical pixel coordinates
+
+  // Draw the temperature fill shape (area from temp line to bottom)
+  shapeCtx.beginPath();
+  shapeCtx.moveTo(0, height * dpr); // Start at bottom-left (physical pixels)
+
+  // Follow temperature line
+  forecast.forEach((hour, index) => {
+    let x = (getHourX(index) + MASK_BLUR_RADIUS) * dpr;
+    const y = getTempY(hour.temperature ?? 0) * dpr;
+    if (index === 0) {
+      x -= MASK_BLUR_RADIUS * dpr;
+    }
+    if (index === forecast.length - 1) {
+      x += MASK_BLUR_RADIUS * dpr;
+    }
+    shapeCtx.lineTo(x, y);
+  });
+
+  // Complete the shape to bottom-right (using full extended width) and back
+  shapeCtx.lineTo(shapeWidth, height * dpr);
+  shapeCtx.closePath();
+
+  // Fill with solid white
+  shapeCtx.fillStyle = 'white';
+  shapeCtx.fill();
+
+  // Create second offscreen canvas for the blurred mask (account for device pixel ratio)
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = width * dpr;
+  maskCanvas.height = height * dpr;
+  const maskCtx = maskCanvas.getContext('2d');
+  if (!maskCtx) return;
+
+  const blurRadius = Math.round(MASK_BLUR_RADIUS * dpr);
+
+  if (supportsNativeBlur) {
+    // Native filter: apply blur DURING the draw operation
+    // This correctly blurs the off-canvas portions before they're clipped
+    maskCtx.filter = `blur(${blurRadius}px)`;
+    maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
+    maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
+    maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
+    maskCtx.filter = 'none';
+  } else {
+    // Safari fallback: blur the shape canvas first, then draw
+    blurCanvasInPlace(shapeCtx, shapeCanvas.width, shapeCanvas.height, blurRadius * dpr);
+    // only two because this code path is more aggressive
+    maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
+    maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
+  }
+
+  // Draw the blurred mask onto main canvas with destination-out
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(maskCanvas, 0, 0, width, height);
+  ctx.restore();
+}
+
+/**
+ * Draw stars for nighttime hours
+ * Stars are small white dots distributed using voronoi relaxation
+ */
+export function drawStars(
+  canvas: HTMLCanvasElement,
+  forecast: WeatherForecast[],
+  sunTimes: SunTimes,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !forecast || forecast.length === 0) return;
+
+  // Get device pixel ratio and logical dimensions
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+  const segmentWidth = width / forecast.length;
+
+  // Only draw stars in the top 25% of the canvas
+  const visibleHeight = height;
+
+  // Process each hour independently
+  forecast.forEach((hour, index) => {
+    // Only draw stars at night
+    if (isDaytime(hour.datetime, sunTimes)) return;
+
+    // Create seeded RNG for this hour segment (consistent across re-renders)
+    const rng = createRng(`${hour.datetime}-stars`);
+
+    // More stars when sky is clearer (less cloud coverage)
+    const cloudCoverage = hour.cloud_coverage ?? 50;
+    const clearness = 1 - cloudCoverage / 100;
+
+    // Calculate segment bounds (only in visible portion)
+    const segmentBounds: Bounds = {
+      x: index * segmentWidth,
+      y: 0,
+      width: segmentWidth,
+      height: visibleHeight,
+    };
+
+    // Base star count scales with clearness and segment size
+    const segmentArea = segmentWidth * visibleHeight;
+    const baseStarDensity = 0.03; // stars per square pixel
+    const starCount = Math.max(1, Math.round(segmentArea * baseStarDensity * clearness));
+
+    if (starCount === 0) return;
+
+    // Generate points using jittered grid sampling
+    const points = generatePoints(starCount, segmentBounds, undefined, 30, rng);
+
+    // Transform points to be denser near the top
+    const transformedPoints = transformPointsDenserAtTop(points, segmentBounds, 4);
+
+    // Draw stars as white dots of varying sizes
+    ctx.save();
+    ctx.fillStyle = 'white';
+
+    transformedPoints.forEach((point) => {
+      // Deterministic size between 1-3px radius
+      const radius = 0.25 + rng() / 2;
+
+      // Deterministic brightness/opacity
+      const opacity = 0.4 + rng() * 0.6;
+      ctx.globalAlpha = opacity - 0.5 + clearness * 0.5;
+
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.restore();
+  });
+}
+
+/**
+ * Draw clouds for daytime hours using cloud emoji
+ * Clouds are placed using voronoi relaxation based on cloud coverage
+ */
+export function drawClouds(
+  canvas: HTMLCanvasElement,
+  forecast: WeatherForecast[],
+  sunTimes: SunTimes,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !forecast || forecast.length === 0) return;
+
+  // Get device pixel ratio and logical dimensions
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+  const segmentWidth = width / forecast.length;
+
+  // Only draw clouds in the top 50% of the canvas
+  const visibleHeight = height * 0.5;
+
+  // Process each hour independently
+  forecast.forEach((hour, index) => {
+    // Only draw clouds during daytime
+    if (!isDaytime(hour.datetime, sunTimes)) return;
+
+    // Create seeded RNG for this hour segment (consistent across re-renders)
+    const rng = createRng(`${hour.datetime}-clouds`);
+
+    const cloudCoverage = hour.cloud_coverage ?? 0;
+
+    // Skip if no cloud coverage
+    if (cloudCoverage <= 5) return;
+
+    // Calculate segment bounds (only in visible portion)
+    const segmentBounds: Bounds = {
+      x: index * segmentWidth,
+      y: 0,
+      width: segmentWidth,
+      height: visibleHeight,
+    };
+
+    // Cloud count scales with coverage (0% = 0 clouds, 100% = many clouds)
+    const segmentArea = segmentWidth * visibleHeight;
+    const cloudDensity = 0.008; // clouds per square pixel at 100% coverage
+    const cloudCount = Math.max(0, Math.round(segmentArea * cloudDensity * (cloudCoverage / 100)));
+
+    if (cloudCount === 0) return;
+
+    // Generate evenly-distributed points using Poisson disk sampling
+    const areaPerCloud = segmentArea / cloudCount;
+    const minDistance = Math.sqrt(areaPerCloud) * 0.8;
+    const points = generatePoints(cloudCount, segmentBounds, minDistance, 30, rng);
+
+    // Transform points to be denser near the top
+    const transformedPoints = transformPointsDenserAtTop(points, segmentBounds, 1.5);
+
+    // Draw cloud emoji at each point
+    transformedPoints.forEach((point) => {
+      // Deterministic cloud size
+      const size = 15 + rng() * 5;
+      drawEmoji(ctx, '☁️', point.x, point.y, size);
+    });
+  });
+}

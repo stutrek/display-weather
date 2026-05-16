@@ -1,0 +1,66 @@
+[
+  {
+    "condition": "snowy",
+    "datetime": "2026-01-18T17:00:00+00:00",
+    "wind_bearing": 2.8,
+    "uv_index": 2.1,
+    "temperature": 33,
+    "templow": 31,
+    "wind_speed": 6.71,
+    "precipitation": 0.16,
+    "humidity": 97
+  },
+  {
+    "condition": "sunny",
+    "datetime": "2026-01-19T17:00:00+00:00",
+    "wind_bearing": 228.2,
+    "uv_index": 2.3,
+    "temperature": 32,
+    "templow": 17,
+    "wind_speed": 16.78,
+    "precipitation": 0.04,
+    "humidity": 72
+  },
+  {
+    "condition": "sunny",
+    "datetime": "2026-01-20T17:00:00+00:00",
+    "wind_bearing": 261,
+    "uv_index": 1.8,
+    "temperature": 26,
+    "templow": 9,
+    "wind_speed": 18.77,
+    "precipitation": 0,
+    "humidity": 60
+  },
+  {
+    "condition": "cloudy",
+    "datetime": "2026-01-21T17:00:00+00:00",
+    "wind_bearing": 159,
+    "uv_index": 0,
+    "temperature": 25,
+    "templow": 6,
+    "wind_speed": 12.55,
+    "precipitation": 0,
+    "humidity": 51
+  },
+  {
+    "condition": "sunny",
+    "datetime": "2026-01-22T17:00:00+00:00",
+    "wind_bearing": 257.7,
+    "temperature": 36,
+    "templow": 32,
+    "wind_speed": 9.63,
+    "precipitation": 0,
+    "humidity": 56
+  },
+  {
+    "condition": "cloudy",
+    "datetime": "2026-01-23T17:00:00+00:00",
+    "wind_bearing": 201.4,
+    "temperature": 28,
+    "templow": 16,
+    "wind_speed": 8.95,
+    "precipitation": 0,
+    "humidity": 54
+  }
+]

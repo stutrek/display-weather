@@ -1,0 +1,29 @@
+{
+  "entity_id": "weather.forecast_home",
+  "state": "snowy",
+  "attributes": {
+    "temperature": 31,
+    "dew_point": 30,
+    "temperature_unit": "°F",
+    "humidity": 98,
+    "cloud_coverage": 100,
+    "uv_index": 0.6,
+    "pressure": 30.07,
+    "pressure_unit": "inHg",
+    "wind_bearing": 355.9,
+    "wind_speed": 4.04,
+    "wind_speed_unit": "mph",
+    "visibility_unit": "mi",
+    "precipitation_unit": "in",
+    "attribution": "Weather forecast from met.no, delivered by the Norwegian Meteorological Institute.",
+    "friendly_name": "Forecast Home",
+    "supported_features": 3
+  },
+  "context": {
+    "id": "01KF8T7454MJES1RYKRGYRHKCN",
+    "parent_id": null,
+    "user_id": null
+  },
+  "last_changed": "2026-01-18T15:05:16.196Z",
+  "last_updated": "2026-01-18T15:05:16.196Z"
+}
