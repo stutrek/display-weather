@@ -18,8 +18,8 @@ importers:
         specifier: ^10.27.2
         version: 10.29.2
       preact-homeassistant:
-        specifier: ^0.1.0
-        version: 0.1.0(preact@10.29.2)
+        specifier: ^0.2.0
+        version: 0.2.0(preact@10.29.2)
     dependenciesMeta:
       preact-homeassistant:
         injected: true
@@ -1567,8 +1567,8 @@ packages:
     resolution: {integrity: sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==}
     engines: {node: ^10 || ^12 || >=14}
 
-  preact-homeassistant@0.1.0:
-    resolution: {integrity: sha512-6QLSijM5TaPeQ4X6ytKHtOrw0OduGD87ZsV23OpDx2YDPv1w7e8f0w1Wp5KX0zdbGXqUHtCX2R8UD/kZtn2MZA==}
+  preact-homeassistant@0.2.0:
+    resolution: {integrity: sha512-B814jXvi67vp1pv7vMpfZ0fAfqXuVeQ2O3H7Tn5+EIsBQeCizUu3eRNI9pNdiUjCmmkJnOSY1GJEcp4qFTvdjw==}
     peerDependencies:
       preact: ^10.0.0
 
@@ -3405,7 +3405,7 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  preact-homeassistant@0.1.0(preact@10.29.2):
+  preact-homeassistant@0.2.0(preact@10.29.2):
     dependencies:
       home-assistant-js-websocket: 9.6.0
       preact: 10.29.2

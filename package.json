@@ -33,7 +33,7 @@
     "@mdi/js": "^7.4.47",
     "home-assistant-js-websocket": "^9.6.0",
     "preact": "^10.27.2",
-    "preact-homeassistant": "^0.1.0"
+    "preact-homeassistant": "^0.2.0"
   },
   "dependenciesMeta": {
     "preact-homeassistant": { "injected": true }
