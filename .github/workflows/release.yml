@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -42,8 +44,22 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+      - name: Build release notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:'- %h %s' "${PREV_TAG}..HEAD")
+          else
+            COMMITS=$(git log --pretty=format:'- %h %s' HEAD)
+          fi
+          cat > release-notes.md <<EOF
+          ## Commits
+
+          $COMMITS
+          EOF
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/display-weather.js
-          generate_release_notes: true
+          body_path: release-notes.md
