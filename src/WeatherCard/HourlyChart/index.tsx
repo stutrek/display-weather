@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { JSX } from 'preact';
+import { useWidth } from 'preact-homeassistant';
 import { useEffect, useRef } from 'preact/hooks';
 import type { SunTimes, WeatherForecast } from '../WeatherContext';
 import {
@@ -43,56 +44,40 @@ export function HourlyChart({
 }: HourlyChartProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const observedWidth = useWidth(containerRef);
 
   const forecast = inputForecast.slice(0, maxItems);
 
-  // Draw canvas when forecast or sunTimes change
+  // Repaint the canvas whenever the container resizes or the inputs change.
+  // useCardWidth only delivers a positive width while the container is in the
+  // DOM, so this effect skips degenerate states for free.
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container || !forecast || forecast.length === 0) return;
+    if (!canvas || observedWidth === undefined || forecast.length === 0 || height === 0) return;
+    const dpr = window.devicePixelRatio || 1;
 
-    // Set canvas size to match container with device pixel ratio
-    const updateCanvas = () => {
-      const containerWidth = container.offsetWidth;
-      // Skip draws when the container is laid out at 0px wide (hidden tab,
-      // pre-layout) — drawImage on a 0-sized canvas throws InvalidStateError.
-      if (containerWidth === 0 || height === 0) return;
-      const dpr = window.devicePixelRatio || 1;
+    // Set CSS size (logical pixels)
+    canvas.style.width = `${observedWidth}px`;
+    canvas.style.height = `${height}px`;
 
-      // Set CSS size (logical pixels)
-      canvas.style.width = `${containerWidth}px`;
-      canvas.style.height = `${height}px`;
+    // Set actual canvas size (physical pixels)
+    canvas.width = observedWidth * dpr;
+    canvas.height = height * dpr;
 
-      // Set actual canvas size (physical pixels)
-      canvas.width = containerWidth * dpr;
-      canvas.height = height * dpr;
+    // Scale context to match device pixel ratio
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.scale(dpr, dpr);
+    }
 
-      // Scale context to match device pixel ratio
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.scale(dpr, dpr);
-      }
-
-      // Draw layers in order
-      drawSkyBackground(canvas, forecast, sunTimes);
-      applyTemperatureMask(canvas, forecast, pixelsPerDegree);
-      drawStars(canvas, forecast, sunTimes);
-      drawClouds(canvas, forecast, sunTimes);
-      drawTemperatureLine(canvas, forecast, pixelsPerDegree, getTemperatureColor);
-      drawPrecipitation(canvas, forecast); // Drawn last so particles appear on top
-    };
-
-    updateCanvas();
-
-    // Handle resize
-    const resizeObserver = new ResizeObserver(updateCanvas);
-    resizeObserver.observe(container);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [forecast, sunTimes, height, pixelsPerDegree, getTemperatureColor]);
+    // Draw layers in order
+    drawSkyBackground(canvas, forecast, sunTimes);
+    applyTemperatureMask(canvas, forecast, pixelsPerDegree);
+    drawStars(canvas, forecast, sunTimes);
+    drawClouds(canvas, forecast, sunTimes);
+    drawTemperatureLine(canvas, forecast, pixelsPerDegree, getTemperatureColor);
+    drawPrecipitation(canvas, forecast); // Drawn last so particles appear on top
+  }, [observedWidth, forecast, sunTimes, height, pixelsPerDegree, getTemperatureColor]);
 
   if (!forecast || forecast.length === 0) {
     return <div className="hourly-no-data">No forecast data available</div>;
@@ -105,9 +90,8 @@ export function HourlyChart({
         {/* Weather icons row above canvas */}
         <div className="hourly-icons-row">
           {(() => {
-            // Get container width, use a default if not available yet
-            const container = containerRef.current;
-            const containerWidth = container?.offsetWidth || 400;
+            // Use a default until the first measurement lands.
+            const containerWidth = observedWidth ?? 400;
 
             // Group consecutive hours with the same condition
             const groups: Array<{
