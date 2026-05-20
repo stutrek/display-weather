@@ -1,4 +1,4 @@
-import { Fragment, type ComponentChildren } from 'preact';
+import { type ComponentChildren, Fragment } from 'preact';
 import { DailyChart } from './DailyChart';
 import { HourlyChart } from './HourlyChart';
 import { useWeather } from './WeatherContext';
