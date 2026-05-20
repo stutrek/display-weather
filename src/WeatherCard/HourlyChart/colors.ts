@@ -22,6 +22,16 @@ const TEMP_COLOR_STOPS = [
 const PALETTE_MIN = TEMP_COLOR_STOPS[0].temp;
 const PALETTE_MAX = TEMP_COLOR_STOPS[TEMP_COLOR_STOPS.length - 1].temp;
 
+export type TemperatureUnit = '°F' | '°C';
+
+function celsiusToFahrenheit(c: number): number {
+  return (c * 9) / 5 + 32;
+}
+
+function toPaletteTemp(temp: number, unit: TemperatureUnit): number {
+  return unit === '°C' ? celsiusToFahrenheit(temp) : temp;
+}
+
 // ============================================================================
 // Color Interpolation Helpers
 // ============================================================================
@@ -87,8 +97,8 @@ function getColorForPaletteTemp(paletteTemp: number): string {
  * Uses smooth interpolation between key temperature points
  * @deprecated Use createAdaptiveTemperatureColorFn for better color differentiation
  */
-export function getTemperatureColor(temp: number): string {
-  return getColorForPaletteTemp(temp);
+export function getTemperatureColor(temp: number, unit: TemperatureUnit = '°F'): string {
+  return getColorForPaletteTemp(toPaletteTemp(temp, unit));
 }
 
 /**
@@ -114,12 +124,17 @@ export function createAdaptiveTemperatureColorFn(
   minTemp: number,
   maxTemp: number,
   padding = 10,
+  unit: TemperatureUnit = '°F',
 ): (temp: number) => string {
-  const tempRange = maxTemp - minTemp;
+  // Convert caller's range to palette units (°F) once.
+  // The closure also converts each incoming temp below.
+  const minPalette = toPaletteTemp(minTemp, unit);
+  const maxPalette = toPaletteTemp(maxTemp, unit);
+  const tempRange = maxPalette - minPalette;
 
-  // Desired color range with padding
-  let colorRangeStart = minTemp - padding;
-  let colorRangeEnd = maxTemp + padding;
+  // Desired color range with padding (palette degrees)
+  let colorRangeStart = minPalette - padding;
+  let colorRangeEnd = maxPalette + padding;
   const colorRangeSize = colorRangeEnd - colorRangeStart;
 
   // Clamp to palette bounds, shifting if necessary
@@ -137,12 +152,13 @@ export function createAdaptiveTemperatureColorFn(
   const actualColorRange = colorRangeEnd - colorRangeStart;
 
   return (temp: number): string => {
+    const paletteInput = toPaletteTemp(temp, unit);
     // Map temp to a position in the forecast range (0 to 1)
     let normalizedPosition: number;
     if (tempRange === 0) {
       normalizedPosition = 0.5; // If no range, use middle
     } else {
-      normalizedPosition = (temp - minTemp) / tempRange;
+      normalizedPosition = (paletteInput - minPalette) / tempRange;
     }
 
     // Clamp to 0-1

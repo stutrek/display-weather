@@ -10,6 +10,7 @@ import {
 } from 'preact-homeassistant';
 import { useContext, useMemo } from 'preact/hooks';
 import {
+  type TemperatureUnit,
   createAdaptiveTemperatureColorFn,
   getTemperatureColor as getFixedTemperatureColor,
 } from './HourlyChart/colors';
@@ -44,6 +45,7 @@ export interface WeatherContextValue {
   loading: boolean;
   windSpeedUnit: string;
   precipitationUnit: string;
+  temperatureUnit: TemperatureUnit;
   sunTimes: SunTimes;
   latitude: number | undefined;
   /** Adaptive temperature color function based on forecast range */
@@ -95,6 +97,7 @@ export function WeatherProvider({
     dusk: undefined,
   };
   let hookLatitude: number | undefined;
+  let configTemperatureUnit: TemperatureUnit | undefined;
 
   // Determine which entity to use for forecasts
   const forecastEntity = config.forecast_entity ?? config.entity;
@@ -104,6 +107,7 @@ export function WeatherProvider({
     const hass = getHass();
     windSpeedUnit = hass?.config?.unit_system?.wind_speed ?? 'mph';
     precipitationUnit = hass?.config?.unit_system?.accumulated_precipitation ?? 'in';
+    configTemperatureUnit = hass?.config?.unit_system?.temperature as TemperatureUnit | undefined;
     hookLatitude = hass?.config?.latitude;
 
     // Current conditions from primary entity
@@ -141,6 +145,11 @@ export function WeatherProvider({
   const loading = propEntity ? false : hookLoading;
   const sunTimes = propSunTimes ?? hookSunTimes;
   const latitude = propLatitude ?? hookLatitude;
+  // `temperature_unit` is sent by HA on weather entities but isn't in the typed
+  // attributes shape from preact-homeassistant. Access it through a narrow cast.
+  const entityTemperatureUnit = (entity?.attributes as { temperature_unit?: string } | undefined)
+    ?.temperature_unit as TemperatureUnit | undefined;
+  const temperatureUnit: TemperatureUnit = entityTemperatureUnit ?? configTemperatureUnit ?? '°F';
 
   // Filter forecasts to show only future time periods
   const hourlyForecast = useMemo(() => {
@@ -190,16 +199,16 @@ export function WeatherProvider({
 
     // If no temperature data, use fixed color function
     if (allTemps.length === 0) {
-      return getFixedTemperatureColor;
+      return (t: number) => getFixedTemperatureColor(t, temperatureUnit);
     }
 
     const minTemp = Math.min(...allTemps);
     const maxTemp = Math.max(...allTemps);
 
-    // Create adaptive function - 10°F padding expands color range on each side
-    // e.g., forecast 20-40°F → colors span 10-50°F of palette
-    return createAdaptiveTemperatureColorFn(minTemp, maxTemp, 12);
-  }, [hourlyForecast, dailyForecast]);
+    // Create adaptive function - 12 palette-degrees (°F) padding on each side.
+    // Inputs are converted from `temperatureUnit` to °F inside the color fn.
+    return createAdaptiveTemperatureColorFn(minTemp, maxTemp, 12, temperatureUnit);
+  }, [hourlyForecast, dailyForecast, temperatureUnit]);
 
   const value = useMemo<WeatherContextValue>(() => {
     return {
@@ -210,6 +219,7 @@ export function WeatherProvider({
       loading,
       windSpeedUnit,
       precipitationUnit,
+      temperatureUnit,
       sunTimes,
       latitude,
       getTemperatureColor,
@@ -222,6 +232,7 @@ export function WeatherProvider({
     loading,
     windSpeedUnit,
     precipitationUnit,
+    temperatureUnit,
     sunTimes,
     latitude,
     getTemperatureColor,
