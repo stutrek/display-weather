@@ -36,18 +36,21 @@ const SCHEMA = [
       },
     },
   },
-  { name: 'showCurrent', selector: { boolean: {} } },
-  { name: 'showHourly', selector: { boolean: {} } },
-  { name: 'showDaily', selector: { boolean: {} } },
 ] as const;
+
+// Rendered outside ha-form so the three switches stack flush together
+// instead of inheriting ha-form's per-row margins. Each entry's key matches
+// the WeatherConfig field it toggles.
+const SECTION_TOGGLES: Array<{ key: 'showCurrent' | 'showHourly' | 'showDaily'; label: string }> = [
+  { key: 'showCurrent', label: 'Show current conditions' },
+  { key: 'showHourly', label: 'Show hourly forecast' },
+  { key: 'showDaily', label: 'Show daily forecast' },
+];
 
 const LABELS: Record<string, string> = {
   entity: 'Current Conditions',
   forecast_entity: 'Forecast Source (optional)',
   size: 'Size',
-  showCurrent: 'Show current conditions',
-  showHourly: 'Show hourly forecast',
-  showDaily: 'Show daily forecast',
 };
 
 const HELPER_TEXT: Record<string, string> = {
@@ -68,12 +71,15 @@ function WeatherEditorContent({ hass, config, onConfigChanged }: EditorProps) {
         next.forecast_entity && next.forecast_entity !== next.entity
           ? (next.forecast_entity as `weather.${string}`)
           : undefined,
-      showCurrent: next.showCurrent !== false,
-      showHourly: next.showHourly !== false,
-      showDaily: next.showDaily !== false,
     };
     onConfigChanged(merged);
   });
+
+  const handleToggle = useCallbackStable(
+    (key: 'showCurrent' | 'showHourly' | 'showDaily', checked: boolean) => {
+      onConfigChanged({ ...config, [key]: checked });
+    },
+  );
 
   const computeLabel = useCallbackStable(
     (schema: { name: string }) => LABELS[schema.name] ?? schema.name,
@@ -83,24 +89,33 @@ function WeatherEditorContent({ hass, config, onConfigChanged }: EditorProps) {
     (schema: { name: string }) => HELPER_TEXT[schema.name] ?? '',
   );
 
-  // Hydrate the toggle states so undefined-in-config (the default) renders as
-  // on in the editor, matching what the card actually shows.
-  const data = {
-    ...config,
-    showCurrent: config.showCurrent !== false,
-    showHourly: config.showHourly !== false,
-    showDaily: config.showDaily !== false,
-  };
-
   return (
-    <ha-form
-      hass={hass}
-      data={data}
-      schema={SCHEMA}
-      computeLabel={computeLabel}
-      computeHelper={computeHelper}
-      onvalue-changed={handleValueChanged}
-    />
+    <>
+      <ha-form
+        hass={hass}
+        data={config}
+        schema={SCHEMA}
+        computeLabel={computeLabel}
+        computeHelper={computeHelper}
+        onvalue-changed={handleValueChanged}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: '8px' }}>
+        {SECTION_TOGGLES.map(({ key, label }) => (
+          <ha-formfield
+            key={key}
+            label={label}
+            alignEnd
+            spaceBetween
+            style={{ display: 'flex', padding: '4px 0' }}
+          >
+            <ha-switch
+              checked={config[key] !== false}
+              onChange={(e: Event) => handleToggle(key, (e.target as HTMLInputElement).checked)}
+            />
+          </ha-formfield>
+        ))}
+      </div>
+    </>
   );
 }
 
