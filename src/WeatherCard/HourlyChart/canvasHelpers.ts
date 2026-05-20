@@ -80,13 +80,21 @@ export function createTemperaturePositioner(
   const minTemp = Math.min(...temps);
   const maxTemp = Math.max(...temps);
   const tempRange = maxTemp - minTemp;
-  const heightNeeded = tempRange * pixelsPerDegree;
-  const verticalPadding = Math.max(0, (canvasHeight - heightNeeded) / 2);
+
+  // Reserve margin so the line never clips at the canvas edge, and scale
+  // pixelsPerDegree down if the range would otherwise overflow.
+  const MARGIN = 12;
+  const usableHeight = canvasHeight - MARGIN * 2;
+  const effectivePpd =
+    tempRange > 0 ? Math.min(pixelsPerDegree, usableHeight / tempRange) : pixelsPerDegree;
+
+  const heightNeeded = tempRange * effectivePpd;
+  const verticalPadding = (canvasHeight - heightNeeded) / 2;
 
   return {
     getTempY: (temp: number): number => {
       if (tempRange === 0) return canvasHeight / 2;
-      return verticalPadding + (maxTemp - temp) * pixelsPerDegree;
+      return verticalPadding + (maxTemp - temp) * effectivePpd;
     },
     minTemp,
     maxTemp,

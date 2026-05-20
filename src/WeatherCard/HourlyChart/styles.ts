@@ -5,6 +5,8 @@ export const hourlyChartStyles = css`
 .hourly-chart-container {
   position: relative;
   width: 100%;
+  padding: 0 10px;
+  box-sizing: border-box;
 }
 
 /* Weather Icons Row */

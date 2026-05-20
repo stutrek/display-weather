@@ -14,6 +14,8 @@ import '../WeatherCard/WeatherCard.styles';
 
 // Import sample data
 import weatherEntity from './weatherEntity.json';
+import weatherForecastDaily from './weatherForecastDaily.json';
+import weatherForecastHourly from './weatherForecastHourly.json';
 
 // Config
 const config: WeatherConfig = {
@@ -927,5 +929,41 @@ export const LargeSize: Story = {
     hourlyForecast: generateDefaultHourlyForecast(),
     dailyForecast: generateDailyForecast(),
     fontSize: 'large',
+  },
+};
+
+// ============================================================================
+// Real Data Story
+// ============================================================================
+
+// Restamp fixture JSONs to start from now so the future-only filter passes.
+function restampedRealData(): { hourly: WeatherForecast[]; daily: WeatherForecast[] } {
+  const now = new Date();
+  const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1);
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const hourly = weatherForecastHourly.slice(0, 12).map((entry, i) => ({
+    ...entry,
+    datetime: new Date(nextHour.getTime() + i * 3600_000).toISOString(),
+  })) as WeatherForecast[];
+
+  const daily = weatherForecastDaily.map((entry, i) => ({
+    ...entry,
+    datetime: new Date(todayMidnight.getTime() + i * 86_400_000).toISOString(),
+  })) as WeatherForecast[];
+
+  return { hourly, daily };
+}
+
+const { hourly: realHourly, daily: realDaily } = restampedRealData();
+
+export const RealData: Story = {
+  name: 'Real Data (fixture)',
+  args: {
+    config,
+    entity: weatherEntity as unknown as WeatherEntity,
+    hourlyForecast: realHourly,
+    dailyForecast: realDaily,
+    fontSize: 'medium',
   },
 };
