@@ -24,6 +24,9 @@ export interface WeatherConfig {
   entity: `weather.${string}`;
   forecast_entity?: `weather.${string}`;
   size?: FontSize;
+  showCurrent?: boolean;
+  showHourly?: boolean;
+  showDaily?: boolean;
 }
 
 export interface SunTimes {

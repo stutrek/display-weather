@@ -36,12 +36,18 @@ const SCHEMA = [
       },
     },
   },
+  { name: 'showCurrent', selector: { boolean: {} } },
+  { name: 'showHourly', selector: { boolean: {} } },
+  { name: 'showDaily', selector: { boolean: {} } },
 ] as const;
 
 const LABELS: Record<string, string> = {
   entity: 'Current Conditions',
   forecast_entity: 'Forecast Source (optional)',
   size: 'Size',
+  showCurrent: 'Show current conditions',
+  showHourly: 'Show hourly forecast',
+  showDaily: 'Show daily forecast',
 };
 
 const HELPER_TEXT: Record<string, string> = {
@@ -62,6 +68,9 @@ function WeatherEditorContent({ hass, config, onConfigChanged }: EditorProps) {
         next.forecast_entity && next.forecast_entity !== next.entity
           ? (next.forecast_entity as `weather.${string}`)
           : undefined,
+      showCurrent: next.showCurrent !== false,
+      showHourly: next.showHourly !== false,
+      showDaily: next.showDaily !== false,
     };
     onConfigChanged(merged);
   });
@@ -74,10 +83,19 @@ function WeatherEditorContent({ hass, config, onConfigChanged }: EditorProps) {
     (schema: { name: string }) => HELPER_TEXT[schema.name] ?? '',
   );
 
+  // Hydrate the toggle states so undefined-in-config (the default) renders as
+  // on in the editor, matching what the card actually shows.
+  const data = {
+    ...config,
+    showCurrent: config.showCurrent !== false,
+    showHourly: config.showHourly !== false,
+    showDaily: config.showDaily !== false,
+  };
+
   return (
     <ha-form
       hass={hass}
-      data={config}
+      data={data}
       schema={SCHEMA}
       computeLabel={computeLabel}
       computeHelper={computeHelper}

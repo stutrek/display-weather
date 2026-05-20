@@ -1,3 +1,4 @@
+import { Fragment, type ComponentChildren } from 'preact';
 import { DailyChart } from './DailyChart';
 import { HourlyChart } from './HourlyChart';
 import { useWeather } from './WeatherContext';
@@ -9,6 +10,7 @@ import { WeatherHeader } from './WeatherHeader';
 
 export function WeatherDisplay() {
   const {
+    config,
     entity,
     hourlyForecast,
     dailyForecast,
@@ -27,14 +29,22 @@ export function WeatherDisplay() {
     return <div class="weather-error">Weather entity not found</div>;
   }
 
-  return (
-    <div class="weather-display">
-      <WeatherHeader entity={entity} windSpeedUnit={windSpeedUnit} />
+  const showCurrent = config.showCurrent !== false;
+  const showHourly = config.showHourly !== false && !!hourlyForecast;
+  const showDaily = config.showDaily !== false && !!dailyForecast;
 
-      <hr />
-
-      {/* Visual hourly forecast chart */}
-      {hourlyForecast && (
+  // Dividers only sit *between* visible sections, never leading or trailing.
+  const sections: Array<{ key: string; node: ComponentChildren }> = [];
+  if (showCurrent) {
+    sections.push({
+      key: 'current',
+      node: <WeatherHeader entity={entity} windSpeedUnit={windSpeedUnit} />,
+    });
+  }
+  if (showHourly && hourlyForecast) {
+    sections.push({
+      key: 'hourly',
+      node: (
         <HourlyChart
           forecast={hourlyForecast}
           sunTimes={sunTimes}
@@ -42,12 +52,13 @@ export function WeatherDisplay() {
           height={80}
           getTemperatureColor={getTemperatureColor}
         />
-      )}
-
-      <hr />
-
-      {/* Visual daily forecast chart */}
-      {dailyForecast && (
+      ),
+    });
+  }
+  if (showDaily && dailyForecast) {
+    sections.push({
+      key: 'daily',
+      node: (
         <DailyChart
           forecast={dailyForecast}
           sunTimes={sunTimes}
@@ -55,7 +66,18 @@ export function WeatherDisplay() {
           height={100}
           getTemperatureColor={getTemperatureColor}
         />
-      )}
+      ),
+    });
+  }
+
+  return (
+    <div class="weather-display">
+      {sections.map((section, i) => (
+        <Fragment key={section.key}>
+          {i > 0 && <hr />}
+          {section.node}
+        </Fragment>
+      ))}
     </div>
   );
 }
