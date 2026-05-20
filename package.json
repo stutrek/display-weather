@@ -1,7 +1,7 @@
 {
   "name": "display-weather",
   "private": true,
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "A Home Assistant weather card designed for wall-mounted displays",
   "author": {
     "name": "Stu Kabakoff",
@@ -36,7 +36,7 @@
     "@mdi/js": "^7.4.47",
     "home-assistant-js-websocket": "^9.6.0",
     "preact": "^10.27.2",
-    "preact-homeassistant": "^0.2.2"
+    "preact-homeassistant": "^0.2.3"
   },
   "dependenciesMeta": {
     "preact-homeassistant": {
