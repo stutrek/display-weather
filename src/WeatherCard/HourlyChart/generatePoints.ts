@@ -34,6 +34,11 @@ export function generatePoints(
   rng: () => number = Math.random,
 ): Point[] {
   if (count <= 0) return [];
+  // Guard against zero-area or invalid bounds: cellSize would be 0, making
+  // cols/rows = Infinity (one dim 0) or NaN (both 0), and the row/col loops
+  // would never terminate. Hit during HA layout transitions when the canvas
+  // momentarily reports a zero dimension before resize settles.
+  if (!(bounds.width > 0) || !(bounds.height > 0)) return [];
 
   const area = bounds.width * bounds.height;
   const cellSize = Math.sqrt(area / count);
