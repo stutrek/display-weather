@@ -160,37 +160,18 @@ export function drawTemperatureLine(
     return (index / (forecast.length - 1)) * width;
   };
 
-  // Save context state
-  ctx.save();
-
-  // Create clip path: area under the temperature line
-  ctx.beginPath();
-  ctx.moveTo(0, height); // Start at bottom-left
-
-  // Move along the bottom edge
-  forecast.forEach((_, index) => {
-    if (index === 0) {
-      ctx.lineTo(0, height);
-    }
-  });
-
-  // Follow temperature line
+  // Build the path for the area below the temperature line.
+  // We fill this polygon directly with ctx.fill() rather than clipping +
+  // fillRect — iOS Safari < 16 has unreliable behavior combining a linear
+  // gradient fillStyle with a clip established from an open-then-closed path,
+  // and that combination was producing an invisible gradient on iOS 15.5.
+  const fillPath = new Path2D();
+  fillPath.moveTo(0, height);
   forecast.forEach((hour, index) => {
-    const x = getHourX(index);
-    const y = getTempY(hour.temperature ?? 0);
-    if (index === 0) {
-      ctx.lineTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
+    fillPath.lineTo(getHourX(index), getTempY(hour.temperature ?? 0));
   });
-
-  // Back down to bottom-right
-  ctx.lineTo(width, height);
-  ctx.closePath();
-
-  // Apply clip
-  ctx.clip();
+  fillPath.lineTo(width, height);
+  fillPath.closePath();
 
   // Create horizontal gradient for temperature colors
   const tempGradient = ctx.createLinearGradient(0, 0, width, 0);
@@ -200,22 +181,18 @@ export function drawTemperatureLine(
     tempGradient.addColorStop(position, color);
   });
 
-  // Fill the clipped area
   ctx.fillStyle = tempGradient;
-  ctx.fillRect(0, 0, width, height);
-
-  // Restore context (remove clip)
-  ctx.restore();
+  ctx.fill(fillPath);
 
   // Draw the temperature line on top
-  ctx.beginPath();
+  const linePath = new Path2D();
   forecast.forEach((hour, index) => {
     const x = getHourX(index);
     const y = getTempY(hour.temperature ?? 0);
     if (index === 0) {
-      ctx.moveTo(x, y);
+      linePath.moveTo(x, y);
     } else {
-      ctx.lineTo(x, y);
+      linePath.lineTo(x, y);
     }
   });
 
@@ -232,5 +209,5 @@ export function drawTemperatureLine(
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.stroke();
+  ctx.stroke(linePath);
 }

@@ -47,6 +47,31 @@ export function createBarPositioner(forecast: WeatherForecast[], canvasHeight: n
 }
 
 // ============================================================================
+// Rounded Rect Path (Safari 15.5 compatibility)
+// ============================================================================
+
+// ctx.roundRect() shipped in Safari 16. Before that (iOS <16), calling it
+// throws TypeError and the entire draw silently fails. Build the rounded
+// rect path from arcTo segments — supported on every shipping Safari.
+function addRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  // Clamp radius so a very short bar doesn't draw a malformed shape.
+  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+// ============================================================================
 // Temperature Bar Drawing
 // ============================================================================
 
@@ -90,7 +115,7 @@ export function drawTemperatureBars(
     // Draw rounded bar
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.roundRect(barX, barTop, barWidth, barHeight, 8);
+    addRoundedRectPath(ctx, barX, barTop, barWidth, barHeight, 8);
     ctx.fill();
   });
 }

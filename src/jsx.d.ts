@@ -17,6 +17,8 @@ declare module 'preact' {
       'ha-button': any;
       'ha-icon-button': any;
       'ha-entity-picker': any;
+      'ha-form': any;
+      'ha-selector': any;
     }
   }
 }

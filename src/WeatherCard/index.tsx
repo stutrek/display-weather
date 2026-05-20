@@ -17,7 +17,6 @@ interface CardConfig extends WeatherConfig {
 // ============================================================================
 
 function WeatherCardContent({ config }: { config: CardConfig }) {
-  console.log('[WeatherCardContent] RENDER', { config });
   const sizeClass = `size-${config.size ?? 'medium'}`;
 
   return (

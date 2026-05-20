@@ -8,7 +8,6 @@ import { WeatherHeader } from './WeatherHeader';
 // ============================================================================
 
 export function WeatherDisplay() {
-  console.log('[WeatherDisplay] RENDER');
   const {
     entity,
     hourlyForecast,

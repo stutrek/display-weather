@@ -15,7 +15,8 @@
     "allowImportingTsExtensions": false,
     "paths": {
       "react": ["./node_modules/preact/compat/"],
-      "react-dom": ["./node_modules/preact/compat/"]
+      "react-dom": ["./node_modules/preact/compat/"],
+      "preact-homeassistant": ["../preact-homeassistant", "./node_modules/preact-homeassistant"]
     }
   },
   "include": ["src", ".storybook"],

@@ -1,11 +1,6 @@
 import type { HomeAssistant } from 'preact-homeassistant';
 import { useCallbackStable } from 'preact-homeassistant';
-import { useEffect, useState } from 'preact/hooks';
-import type { FontSize, WeatherConfig } from './WeatherContext';
-
-// ============================================================================
-// Types
-// ============================================================================
+import type { WeatherConfig } from './WeatherContext';
 
 interface EditorProps {
   hass: HomeAssistant;
@@ -13,164 +8,82 @@ interface EditorProps {
   onConfigChanged: (config: WeatherConfig) => void;
 }
 
-// ============================================================================
-// Editor Component
-// ============================================================================
+// Use HA's modern <ha-form> with selectors. HA renders the right control for
+// each field and themes it consistently. Avoid the older
+// <ha-select>+<ha-list-item> pattern — current HA replaced ha-select's
+// internals (ha-dropdown / wa-popup) and arbitrary list-item children no
+// longer participate in selection.
+const SCHEMA = [
+  {
+    name: 'entity',
+    required: true,
+    selector: { entity: { domain: 'weather' } },
+  },
+  {
+    name: 'forecast_entity',
+    selector: { entity: { domain: 'weather' } },
+  },
+  {
+    name: 'size',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: [
+          { value: 'small', label: 'Small' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'large', label: 'Large' },
+        ],
+      },
+    },
+  },
+] as const;
+
+const LABELS: Record<string, string> = {
+  entity: 'Current Conditions',
+  forecast_entity: 'Forecast Source (optional)',
+  size: 'Size',
+};
+
+const HELPER_TEXT: Record<string, string> = {
+  forecast_entity: 'Use a different entity for forecasts. Leave empty to use the same entity.',
+};
 
 function WeatherEditorContent({ hass, config, onConfigChanged }: EditorProps) {
-  const [entity, setEntity] = useState<string>(config.entity ?? '');
-  const [forecastEntity, setForecastEntity] = useState<string>(config.forecast_entity ?? '');
-  const [size, setSize] = useState<FontSize>(config.size ?? 'medium');
+  const handleValueChanged = useCallbackStable((e: Event) => {
+    const next = (e as CustomEvent).detail?.value as Partial<WeatherConfig> | undefined;
+    if (!next?.entity?.startsWith('weather.')) return;
 
-  // Get available weather entities from hass
-  const weatherEntities = Object.keys(hass.states).filter((e) => e.startsWith('weather.'));
+    const merged: WeatherConfig = {
+      ...config,
+      ...next,
+      entity: next.entity as `weather.${string}`,
+      // Drop forecast_entity when it's empty or equals the main entity.
+      forecast_entity:
+        next.forecast_entity && next.forecast_entity !== next.entity
+          ? (next.forecast_entity as `weather.${string}`)
+          : undefined,
+    };
+    onConfigChanged(merged);
+  });
 
-  // Sync with external config changes
-  useEffect(() => {
-    setEntity(config.entity ?? '');
-    setForecastEntity(config.forecast_entity ?? '');
-    setSize(config.size ?? 'medium');
-  }, [config]);
-
-  const fireConfigChanged = useCallbackStable(
-    (newEntity: string, newForecastEntity: string, newSize: FontSize) => {
-      if (!newEntity || !newEntity.startsWith('weather.')) {
-        return; // Don't fire if no valid entity
-      }
-
-      const newConfig: WeatherConfig = {
-        ...config,
-        entity: newEntity as `weather.${string}`,
-        size: newSize,
-      };
-
-      // Only include forecast_entity if it's different from entity
-      if (newForecastEntity?.startsWith('weather.') && newForecastEntity !== newEntity) {
-        newConfig.forecast_entity = newForecastEntity as `weather.${string}`;
-      } else {
-        newConfig.forecast_entity = undefined;
-      }
-
-      onConfigChanged(newConfig);
-    },
+  const computeLabel = useCallbackStable(
+    (schema: { name: string }) => LABELS[schema.name] ?? schema.name,
   );
 
-  const handleEntitySelect = useCallbackStable((e: Event) => {
-    const target = e.target as HTMLSelectElement;
-    setEntity(target.value);
-    fireConfigChanged(target.value, forecastEntity, size);
-  });
-
-  const handleForecastEntitySelect = useCallbackStable((e: Event) => {
-    const target = e.target as HTMLSelectElement;
-    setForecastEntity(target.value);
-    fireConfigChanged(entity, target.value, size);
-  });
-
-  const handleSizeSelect = useCallbackStable((e: Event) => {
-    const target = e.target as HTMLSelectElement;
-    const newSize = target.value as FontSize;
-    setSize(newSize);
-    fireConfigChanged(entity, forecastEntity, newSize);
-  });
+  const computeHelper = useCallbackStable(
+    (schema: { name: string }) => HELPER_TEXT[schema.name] ?? '',
+  );
 
   return (
-    <div class="editor">
-      <style>{editorStyles}</style>
-
-      <div class="section">
-        <div class="section-header">
-          <span>Weather Entity</span>
-        </div>
-        <ha-select
-          label="Current Conditions"
-          value={entity}
-          naturalMenuWidth
-          fixedMenuPosition
-          onChange={handleEntitySelect}
-          onclosed={(e: Event) => e.stopPropagation()}
-        >
-          <ha-list-item value="">Select weather entity...</ha-list-item>
-          {weatherEntities.map((ent) => (
-            <ha-list-item key={ent} value={ent}>
-              {hass.states[ent]?.attributes?.friendly_name ?? ent}
-            </ha-list-item>
-          ))}
-        </ha-select>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <span>Forecast Entity (optional)</span>
-        </div>
-        <p class="help-text">
-          Use a different entity for forecasts. Leave empty to use the same entity.
-        </p>
-        <ha-select
-          label="Forecast Source"
-          value={forecastEntity}
-          naturalMenuWidth
-          fixedMenuPosition
-          onChange={handleForecastEntitySelect}
-          onclosed={(e: Event) => e.stopPropagation()}
-        >
-          <ha-list-item value="">Same as conditions</ha-list-item>
-          {weatherEntities.map((ent) => (
-            <ha-list-item key={ent} value={ent}>
-              {hass.states[ent]?.attributes?.friendly_name ?? ent}
-            </ha-list-item>
-          ))}
-        </ha-select>
-      </div>
-
-      <div class="section">
-        <div class="section-header">
-          <span>Appearance</span>
-        </div>
-        <ha-select
-          label="Size"
-          value={size}
-          naturalMenuWidth
-          fixedMenuPosition
-          onChange={handleSizeSelect}
-          onclosed={(e: Event) => e.stopPropagation()}
-        >
-          <ha-list-item value="small">Small</ha-list-item>
-          <ha-list-item value="medium">Medium</ha-list-item>
-          <ha-list-item value="large">Large</ha-list-item>
-        </ha-select>
-      </div>
-    </div>
+    <ha-form
+      hass={hass}
+      data={config}
+      schema={SCHEMA}
+      computeLabel={computeLabel}
+      computeHelper={computeHelper}
+      onvalue-changed={handleValueChanged}
+    />
   );
 }
-
-const editorStyles = `
-  .editor {
-    padding: 16px;
-  }
-  
-  .section {
-    margin-bottom: 24px;
-  }
-  
-  .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    font-weight: 500;
-    color: var(--primary-text-color);
-  }
-  
-  .help-text {
-    font-size: 12px;
-    color: var(--secondary-text-color);
-    margin: 0 0 8px 0;
-  }
-  
-  ha-select {
-    display: block;
-  }
-`;
 
 export { WeatherEditorContent };

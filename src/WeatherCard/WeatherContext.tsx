@@ -78,7 +78,6 @@ export function WeatherProvider({
   latitude: propLatitude,
   children,
 }: WeatherProviderProps) {
-  console.log('[WeatherProvider] RENDER');
   // Use HAContext hooks to fetch data (only runs if inside HAProvider)
   let hookEntity: WeatherEntity | undefined;
   let hookHourlyForecast: WeatherForecast[] | undefined;
@@ -200,7 +199,6 @@ export function WeatherProvider({
   }, [hourlyForecast, dailyForecast]);
 
   const value = useMemo<WeatherContextValue>(() => {
-    console.log('[WeatherProvider] useMemo - creating context value');
     return {
       config,
       entity,

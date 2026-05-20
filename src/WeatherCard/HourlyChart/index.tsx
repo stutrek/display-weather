@@ -41,7 +41,6 @@ export function HourlyChart({
   maxItems = 12,
   getTemperatureColor,
 }: HourlyChartProps): JSX.Element {
-  console.log('[HourlyChart] RENDER', { forecastCount: inputForecast.length });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +55,9 @@ export function HourlyChart({
     // Set canvas size to match container with device pixel ratio
     const updateCanvas = () => {
       const containerWidth = container.offsetWidth;
+      // Skip draws when the container is laid out at 0px wide (hidden tab,
+      // pre-layout) — drawImage on a 0-sized canvas throws InvalidStateError.
+      if (containerWidth === 0 || height === 0) return;
       const dpr = window.devicePixelRatio || 1;
 
       // Set CSS size (logical pixels)

@@ -61,7 +61,6 @@ export function DailyChart({
   precipitationUnit = 'in',
   getTemperatureColor,
 }: DailyChartProps): JSX.Element {
-  console.log('[DailyChart] RENDER', { forecastCount: forecast.length });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [actualColumnCount, setActualColumnCount] = useState<number>(7);
