@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
 
+# One release at a time per ref. Cancel-in-progress=false so a re-pushed
+# tag doesn't kill an in-flight release; instead the second run queues.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -21,7 +27,18 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
 
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME (=> $TAG_VERSION) does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
 
