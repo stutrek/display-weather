@@ -24,12 +24,14 @@
     "lint": "biome check src",
     "lint:fix": "biome check --write src",
     "format": "biome format --write src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "simple-git-hooks"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "@biomejs/biome",
-      "esbuild"
+      "esbuild",
+      "simple-git-hooks"
     ]
   },
   "dependencies": {
@@ -55,6 +57,14 @@
     "storybook": "^10.1.11",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.17",
+    "lint-staged": "^17.0.5",
+    "simple-git-hooks": "^2.13.1"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm lint-staged && pnpm typecheck"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
   }
 }
