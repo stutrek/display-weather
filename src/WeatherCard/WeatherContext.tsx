@@ -28,6 +28,7 @@ export interface WeatherConfig {
   showCurrent?: boolean;
   showHourly?: boolean;
   showDaily?: boolean;
+  hourlyHours?: 12 | 18 | 24;
 }
 
 export interface SunTimes {

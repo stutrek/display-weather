@@ -48,7 +48,7 @@ export function WeatherDisplay() {
         <HourlyChart
           forecast={hourlyForecast}
           sunTimes={sunTimes}
-          maxItems={20}
+          maxItems={config.hourlyHours ?? 12}
           height={80}
           getTemperatureColor={getTemperatureColor}
         />

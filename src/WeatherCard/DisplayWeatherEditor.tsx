@@ -36,6 +36,19 @@ const SCHEMA = [
       },
     },
   },
+  {
+    name: 'hourlyHours',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: [
+          { value: 12, label: '12 hours' },
+          { value: 18, label: '18 hours' },
+          { value: 24, label: '24 hours' },
+        ],
+      },
+    },
+  },
 ] as const;
 
 // Rendered outside ha-form so the three switches stack flush together
@@ -51,6 +64,7 @@ const LABELS: Record<string, string> = {
   entity: 'Current Conditions',
   forecast_entity: 'Forecast Source (optional)',
   size: 'Size',
+  hourlyHours: 'Hourly forecast hours',
 };
 
 const HELPER_TEXT: Record<string, string> = {
