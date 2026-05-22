@@ -411,67 +411,65 @@ export function drawStars(
   const ctx = canvas.getContext('2d');
   if (!ctx || !forecast || forecast.length === 0) return;
 
-  // Get device pixel ratio and logical dimensions
   const dpr = window.devicePixelRatio || 1;
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
   const segmentWidth = width / forecast.length;
 
-  // Only draw stars in the top 25% of the canvas
-  const visibleHeight = height;
+  // Same timestamp-based positioning as drawSkyBackground and drawClouds
+  const firstTime = new Date(forecast[0].datetime).getTime();
+  const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
+  const timeRange = lastTime - firstTime;
 
-  // Process each hour independently
+  const sunEventX = (sunTime: Date | undefined): number | null => {
+    if (!sunTime || timeRange === 0) return null;
+    let t = sunTime.getTime();
+    if (t < firstTime) t += 86400000;
+    if (t < firstTime || t > lastTime) return null;
+    return ((t - firstTime) / timeRange) * width;
+  };
+
+  const sunriseX = sunEventX(sunTimes.sunrise ?? undefined) ?? 0;
+  const sunsetX = sunEventX(sunTimes.sunset ?? undefined) ?? width;
+
+  // Clip drawing to night regions: [0, sunriseX] and [sunsetX, width]
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, sunriseX, height);
+  ctx.rect(sunsetX, 0, width - sunsetX, height);
+  ctx.clip();
+
   forecast.forEach((hour, index) => {
-    // Only draw stars at night
-    if (isDaytime(hour.datetime, sunTimes)) return;
-
-    // Create seeded RNG for this hour segment (consistent across re-renders)
     const rng = createRng(`${hour.datetime}-stars`);
-
-    // More stars when sky is clearer (less cloud coverage)
     const cloudCoverage = hour.cloud_coverage ?? 50;
     const clearness = 1 - cloudCoverage / 100;
 
-    // Calculate segment bounds (only in visible portion)
     const segmentBounds: Bounds = {
       x: index * segmentWidth,
       y: 0,
       width: segmentWidth,
-      height: visibleHeight,
+      height,
     };
 
-    // Base star count scales with clearness and segment size
-    const segmentArea = segmentWidth * visibleHeight;
-    const baseStarDensity = 0.03; // stars per square pixel
+    const segmentArea = segmentWidth * height;
+    const baseStarDensity = 0.03;
     const starCount = Math.max(1, Math.round(segmentArea * baseStarDensity * clearness));
 
-    if (starCount === 0) return;
-
-    // Generate points using jittered grid sampling
     const points = generatePoints(starCount, segmentBounds, undefined, 30, rng);
-
-    // Transform points to be denser near the top
     const transformedPoints = transformPointsDenserAtTop(points, segmentBounds, 4);
 
-    // Draw stars as white dots of varying sizes
-    ctx.save();
     ctx.fillStyle = 'white';
-
     transformedPoints.forEach((point) => {
-      // Deterministic size between 1-3px radius
       const radius = 0.25 + rng() / 2;
-
-      // Deterministic brightness/opacity
       const opacity = 0.4 + rng() * 0.6;
       ctx.globalAlpha = opacity - 0.5 + clearness * 0.5;
-
       ctx.beginPath();
       ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
       ctx.fill();
     });
-
-    ctx.restore();
   });
+
+  ctx.restore();
 }
 
 const CLOUD_DRAW_FNS: Record<
