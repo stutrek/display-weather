@@ -30,7 +30,7 @@ export function inferCloudType(f: CloudForecastEntry, isNight = false): CloudTyp
   const uv = f.uv_index ?? 4;
 
   // Clear sky — nothing to render
-  if (coverage < 0.08) return 'none';
+  if (coverage < 0.01) return 'none';
   if (condition === 'sunny' || condition === 'clear-night' || condition === 'clear') {
     if (coverage < 0.15) return 'none';
   }

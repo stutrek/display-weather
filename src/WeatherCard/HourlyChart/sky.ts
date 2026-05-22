@@ -18,10 +18,8 @@ import { createRng } from './random';
 // ============================================================================
 
 const COLORS = {
-  dayClear: '#44DAFF', // Bright sky blue
-  dayCloudy: '#8A97A8', // Cool grey
-  nightClear: '#2D1B4E', // Deep violet
-  nightCloudy: '#2D1B4E', // Dark charcoal
+  dayClear: '#44DAFF',
+  nightClear: '#2D1B4E',
 };
 
 // Blur radius for temperature mask (in pixels)
@@ -65,51 +63,10 @@ function isDaytime(datetime: string, sunTimes: SunTimes): boolean {
 }
 
 /**
- * Interpolate between two hex colors based on a factor (0 to 1)
+ * Get the color for a specific hour based on day/night
  */
-function interpolateColor(color1: string, color2: string, factor: number): string {
-  const c1 = hexToRgb(color1);
-  const c2 = hexToRgb(color2);
-
-  const r = Math.round(c1.r + (c2.r - c1.r) * factor);
-  const g = Math.round(c1.g + (c2.g - c1.g) * factor);
-  const b = Math.round(c1.b + (c2.b - c1.b) * factor);
-
-  return rgbToHex(r, g, b);
-}
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result
-    ? {
-        r: Number.parseInt(result[1], 16),
-        g: Number.parseInt(result[2], 16),
-        b: Number.parseInt(result[3], 16),
-      }
-    : { r: 0, g: 0, b: 0 };
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
-}
-
-/**
- * Get the color for a specific hour based on cloud coverage and day/night
- */
-function getHourColor(
-  datetime: string,
-  cloudCoverage: number | undefined,
-  sunTimes: SunTimes,
-): string {
-  const isDay = isDaytime(datetime, sunTimes);
-  const coverage = (cloudCoverage ?? 50) / 100; // Convert to 0-1 range
-
-  if (isDay) {
-    // Interpolate between clear blue and cloudy grey
-    return interpolateColor(COLORS.dayClear, COLORS.dayCloudy, coverage);
-  }
-  // Interpolate between clear violet and cloudy dark charcoal
-  return interpolateColor(COLORS.nightClear, COLORS.nightCloudy, coverage);
+function getHourColor(datetime: string, sunTimes: SunTimes): string {
+  return isDaytime(datetime, sunTimes) ? COLORS.dayClear : COLORS.nightClear;
 }
 
 /**
@@ -210,7 +167,7 @@ export function drawSkyBackground(
   // Add color stops for each hour
   forecast.forEach((hour, index) => {
     const position = index / (forecast.length - 1);
-    const color = getHourColor(hour.datetime, hour.cloud_coverage, sunTimes);
+    const color = getHourColor(hour.datetime, sunTimes);
     colorStops.push({ position, color });
   });
   // Add sunrise transition if within range
@@ -226,27 +183,15 @@ export function drawSkyBackground(
       const sunrisePos = getGradientPosition(sunriseTime);
       const offset = 0.001; // Small offset for sharp transition
 
-      // Get average cloud coverage around sunrise for smooth cloud transition
-      const avgCloudCoverage =
-        forecast.reduce((sum, h) => sum + (h.cloud_coverage ?? 50), 0) / forecast.length;
-
-      // Just before sunrise: night color
-      const nightColor = interpolateColor(
-        COLORS.nightClear,
-        COLORS.nightCloudy,
-        avgCloudCoverage / 100,
-      );
       colorStops.push({
         position: Math.max(0, sunrisePos - offset),
-        color: nightColor,
+        color: COLORS.nightClear,
         isSunEvent: true,
       });
 
-      // Just after sunrise: day color
-      const dayColor = interpolateColor(COLORS.dayClear, COLORS.dayCloudy, avgCloudCoverage / 100);
       colorStops.push({
         position: Math.min(1, sunrisePos + offset),
-        color: dayColor,
+        color: COLORS.dayClear,
         isSunEvent: true,
         isAfterSun: true,
       });
@@ -266,27 +211,15 @@ export function drawSkyBackground(
       const sunsetPos = getGradientPosition(sunsetTime);
       const offset = 0.001; // Small offset for sharp transition
 
-      // Get average cloud coverage around sunset for smooth cloud transition
-      const avgCloudCoverage =
-        forecast.reduce((sum, h) => sum + (h.cloud_coverage ?? 50), 0) / forecast.length;
-
-      // Just before sunset: day color
-      const dayColor = interpolateColor(COLORS.dayClear, COLORS.dayCloudy, avgCloudCoverage / 100);
       colorStops.push({
         position: Math.max(0, sunsetPos - offset),
-        color: dayColor,
+        color: COLORS.dayClear,
         isSunEvent: true,
       });
 
-      // Just after sunset: night color
-      const nightColor = interpolateColor(
-        COLORS.nightClear,
-        COLORS.nightCloudy,
-        avgCloudCoverage / 100,
-      );
       colorStops.push({
         position: Math.min(1, sunsetPos + offset),
-        color: nightColor,
+        color: COLORS.nightClear,
         isSunEvent: true,
         isAfterSun: true,
       });
@@ -483,7 +416,7 @@ const CLOUD_DRAW_FNS: Record<
   ) => void
 > = {
   cumulus: drawCumulus,
-  stratocumulus: drawStratocumulus,
+  stratocumulus: drawStratus,
   stratus: drawStratus,
   cirrus: drawCirrus,
 };

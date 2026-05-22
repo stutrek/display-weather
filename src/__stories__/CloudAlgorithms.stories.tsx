@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { Fragment } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { drawCumulonimbus } from '../WeatherCard/HourlyChart/cloudCumulonimbus';
 import { drawCumulus } from '../WeatherCard/HourlyChart/cloudCumulus';
 import { drawStratocumulus } from '../WeatherCard/HourlyChart/cloudStratocumulus';
 import { SvgCloud } from '../WeatherCard/HourlyChart/cloudSvg';
@@ -56,6 +57,19 @@ const ALGORITHMS = [
     note: 'Radial gradient circles, multiple vertical passes at high coverage.',
     render: (coverage: number, idx: number) => (
       <CloudCanvas draw={drawCumulus} coverage={coverage} seed={`cc-${idx}`} width={W} height={H} />
+    ),
+  },
+  {
+    name: 'Cumulonimbus',
+    note: 'Larger circles, fewer clusters, heavy dark base gradient.',
+    render: (coverage: number, idx: number) => (
+      <CloudCanvas
+        draw={drawCumulonimbus}
+        coverage={coverage}
+        seed={`cb-${idx}`}
+        width={W}
+        height={H}
+      />
     ),
   },
   {
