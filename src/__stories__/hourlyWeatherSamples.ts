@@ -16,6 +16,7 @@ interface BaseHourData {
   precipitation: number;
   precipitation_probability: number;
   wind_speed: number;
+  wind_bearing?: number; // meteorological degrees (0=N, 90=E); defaults to 180 (S)
   humidity: number;
 }
 
@@ -85,7 +86,7 @@ function applyTemperatureRange(
       precipitation: hour.precipitation,
       precipitation_probability: hour.precipitation_probability,
       wind_speed: hour.wind_speed,
-      wind_bearing: 180,
+      wind_bearing: hour.wind_bearing ?? 180,
       humidity: hour.humidity,
       uv_index,
     };
@@ -226,13 +227,14 @@ const buildingStormBase: BaseHourData[] = [
     wind_speed: 14,
     humidity: 82,
   },
-  // Hours 12-13: Rain (2 hours)
+  // Hours 12-13: Rain (2 hours) — wind shifts to SW as front arrives
   {
     condition: 'rainy',
     cloud_coverage: 100,
     precipitation: 0.3,
     precipitation_probability: 90,
     wind_speed: 15,
+    wind_bearing: 240,
     humidity: 88,
   },
   {
@@ -241,6 +243,7 @@ const buildingStormBase: BaseHourData[] = [
     precipitation: 0.5,
     precipitation_probability: 95,
     wind_speed: 16,
+    wind_bearing: 250,
     humidity: 90,
   },
   // Hours 14-17: Post-rain cloudy, wind picking up
@@ -471,6 +474,7 @@ const fogAndThunderstormBase: BaseHourData[] = [
     precipitation: 0.8,
     precipitation_probability: 90,
     wind_speed: 22,
+    wind_bearing: 270,
     humidity: 85,
   },
   {
@@ -479,6 +483,7 @@ const fogAndThunderstormBase: BaseHourData[] = [
     precipitation: 1.2,
     precipitation_probability: 95,
     wind_speed: 25,
+    wind_bearing: 275,
     humidity: 88,
   },
   // Hours 18-23: Clearing, partly cloudy
@@ -488,6 +493,7 @@ const fogAndThunderstormBase: BaseHourData[] = [
     precipitation: 0.3,
     precipitation_probability: 60,
     wind_speed: 18,
+    wind_bearing: 280,
     humidity: 80,
   },
   {
@@ -587,13 +593,14 @@ const rainyMorningBase: BaseHourData[] = [
     wind_speed: 11,
     humidity: 87,
   },
-  // Hours 6-9: Morning rain
+  // Hours 6-9: Morning rain — east wind so streaks lean left
   {
     condition: 'rainy',
     cloud_coverage: 100,
     precipitation: 0.3,
     precipitation_probability: 90,
     wind_speed: 12,
+    wind_bearing: 100,
     humidity: 90,
   },
   {
@@ -602,6 +609,7 @@ const rainyMorningBase: BaseHourData[] = [
     precipitation: 0.5,
     precipitation_probability: 95,
     wind_speed: 14,
+    wind_bearing: 100,
     humidity: 92,
   },
   {
@@ -610,6 +618,7 @@ const rainyMorningBase: BaseHourData[] = [
     precipitation: 0.4,
     precipitation_probability: 90,
     wind_speed: 12,
+    wind_bearing: 110,
     humidity: 90,
   },
   {
@@ -618,6 +627,7 @@ const rainyMorningBase: BaseHourData[] = [
     precipitation: 0.2,
     precipitation_probability: 75,
     wind_speed: 10,
+    wind_bearing: 120,
     humidity: 85,
   },
   // Hours 10-13: Clearing up, sunny
@@ -1453,13 +1463,14 @@ const coldFrontBase: BaseHourData[] = [
     wind_speed: 22,
     humidity: 86,
   },
-  // Hours 12-14: Storms as front passes
+  // Hours 12-14: Storms as front passes — strong westerly at max lean
   {
     condition: 'lightning-rainy',
     cloud_coverage: 100,
     precipitation: 0.8,
     precipitation_probability: 95,
     wind_speed: 28,
+    wind_bearing: 260,
     humidity: 90,
   },
   {
@@ -1468,6 +1479,7 @@ const coldFrontBase: BaseHourData[] = [
     precipitation: 1.2,
     precipitation_probability: 98,
     wind_speed: 32,
+    wind_bearing: 270,
     humidity: 92,
   },
   {
@@ -1476,6 +1488,7 @@ const coldFrontBase: BaseHourData[] = [
     precipitation: 0.6,
     precipitation_probability: 90,
     wind_speed: 28,
+    wind_bearing: 275,
     humidity: 88,
   },
   // Hours 15-17: Rapid clearing, windy
@@ -1485,6 +1498,7 @@ const coldFrontBase: BaseHourData[] = [
     precipitation: 0.1,
     precipitation_probability: 50,
     wind_speed: 30,
+    wind_bearing: 290,
     humidity: 70,
   },
   {

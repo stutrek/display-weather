@@ -302,6 +302,16 @@ export const AllDayOvercastAllSeasons: Story = {
   parameters: { layout: 'fullscreen' },
 };
 
+export const DayNightBoundaryTest: Story = {
+  name: '🌙 Day/Night Boundary Test (Winter)',
+  render: (args) => <HourlyChartWrapper {...(args as unknown as HourlyChartStoryArgs)} />,
+  args: {
+    forecast: samples.allDayOvercast.winter,
+    sunTimes: getSunTimesForForecast(samples.allDayOvercast.winter),
+    getTemperatureColor: createColorFnForSample(samples.allDayOvercast.winter),
+  },
+};
+
 export const OvernightSnowClearingAllSeasons: Story = {
   name: '🌨️ Overnight Snow Clearing - All Seasons',
   render: () => (

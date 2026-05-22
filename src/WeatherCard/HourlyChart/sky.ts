@@ -6,7 +6,12 @@
 import type { SunTimes, WeatherForecast } from '../WeatherContext';
 import { blurCanvasInPlace, supportsNativeBlur } from './blur';
 import { createTemperaturePositioner } from './canvasHelpers';
+import { drawCirrus } from './cloudCirrus';
+import { drawCumulus } from './cloudCumulus';
+import { drawStratocumulus } from './cloudStratocumulus';
+import { drawStratus } from './cloudStratus';
 import { type Bounds, generatePoints } from './generatePoints';
+import { type CloudType, inferCloudType } from './inferCloudType';
 import { createRng } from './random';
 // ============================================================================
 // Constants
@@ -469,10 +474,22 @@ export function drawStars(
   });
 }
 
-/**
- * Draw clouds for daytime hours using cloud emoji
- * Clouds are placed using voronoi relaxation based on cloud coverage
- */
+const CLOUD_DRAW_FNS: Record<
+  Exclude<CloudType, 'none'>,
+  (
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    coverageAt: (x: number) => number,
+    rng: () => number,
+  ) => void
+> = {
+  cumulus: drawCumulus,
+  stratocumulus: drawStratocumulus,
+  stratus: drawStratus,
+  cirrus: drawCirrus,
+};
+
 export function drawClouds(
   canvas: HTMLCanvasElement,
   forecast: WeatherForecast[],
@@ -481,56 +498,129 @@ export function drawClouds(
   const ctx = canvas.getContext('2d');
   if (!ctx || !forecast || forecast.length === 0) return;
 
-  // Get device pixel ratio and logical dimensions
   const dpr = window.devicePixelRatio || 1;
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
   const segmentWidth = width / forecast.length;
 
-  // Only draw clouds in the top 50% of the canvas
-  const visibleHeight = height * 0.5;
+  // Use the same timestamp-based positioning as drawSkyBackground so cloud
+  // boundaries align exactly with the sky colour transition.
+  const firstTime = new Date(forecast[0].datetime).getTime();
+  const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
+  const timeRange = lastTime - firstTime;
 
-  // Process each hour independently
-  forecast.forEach((hour, index) => {
-    // Only draw clouds during daytime
-    if (!isDaytime(hour.datetime, sunTimes)) return;
+  const sunEventX = (sunTime: Date | undefined): number | null => {
+    if (!sunTime || timeRange === 0) return null;
+    let t = sunTime.getTime();
+    if (t < firstTime) t += 86400000; // use tomorrow's event if it already passed
+    if (t < firstTime || t > lastTime) return null;
+    return ((t - firstTime) / timeRange) * width;
+  };
 
-    // Create seeded RNG for this hour segment (consistent across re-renders)
-    const rng = createRng(`${hour.datetime}-clouds`);
+  const sunriseX = sunEventX(sunTimes.sunrise ?? undefined) ?? 0;
+  const sunsetX = sunEventX(sunTimes.sunset ?? undefined) ?? width;
 
-    const cloudCoverage = hour.cloud_coverage ?? 0;
+  // Build runs of consecutive same-type hours, ignoring day/night.
+  // Daylight clamping (below) handles the sun boundaries.
+  interface Run {
+    type: Exclude<CloudType, 'none'>;
+    startX: number;
+    endX: number;
+    coveragePoints: { x: number; v: number }[];
+  }
+  const runs: Run[] = [];
 
-    // Skip if no cloud coverage
-    if (cloudCoverage <= 5) return;
+  for (let i = 0; i < forecast.length; i++) {
+    const hour = forecast[i];
+    const type = inferCloudType(hour, false);
+    if (type === 'none') continue;
 
-    // Calculate segment bounds (only in visible portion)
-    const segmentBounds: Bounds = {
-      x: index * segmentWidth,
-      y: 0,
-      width: segmentWidth,
-      height: visibleHeight,
+    const startX = i * segmentWidth;
+    const endX = (i + 1) * segmentWidth;
+    const coverage = (hour.cloud_coverage ?? 50) / 100;
+    const centerX = startX + segmentWidth / 2;
+
+    const last = runs[runs.length - 1];
+    if (last && last.type === type && last.endX === startX) {
+      last.endX = endX;
+      last.coveragePoints.push({ x: centerX, v: coverage });
+    } else {
+      runs.push({
+        type,
+        startX,
+        endX,
+        coveragePoints: [{ x: centerX, v: coverage }],
+      });
+    }
+  }
+
+  const blendW = segmentWidth * 1.5;
+
+  for (let ri = 0; ri < runs.length; ri++) {
+    const run = runs[ri];
+
+    // Clamp run to daylight
+    const clampStart = Math.max(run.startX, sunriseX);
+    const clampEnd = Math.min(run.endX, sunsetX);
+    if (clampStart >= clampEnd) continue;
+
+    // Blend at cloud-type transitions within daylight; hard cut at sun boundaries
+    const leftBlend = ri > 0 && clampStart === run.startX ? blendW : 0;
+    const rightBlend = ri < runs.length - 1 && clampEnd === run.endX ? blendW : 0;
+
+    const drawStart = Math.max(clampStart - leftBlend, 0);
+    const drawEnd = Math.min(clampEnd + rightBlend, width);
+    const totalW = Math.ceil(drawEnd - drawStart);
+    const totalH = Math.ceil(height);
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = totalW;
+    offscreen.height = totalH;
+    const offCtx = offscreen.getContext('2d');
+    if (!offCtx) continue;
+
+    const rng = createRng(`clouds-${run.type}-${run.startX}`);
+
+    // Build coverageAt mapping local offscreen x → interpolated 0–1 coverage
+    const points = run.coveragePoints;
+    const coverageAt = (localX: number): number => {
+      const worldX = localX + drawStart;
+      if (points.length === 1) return points[0].v;
+      if (worldX <= points[0].x) return points[0].v;
+      if (worldX >= points[points.length - 1].x) return points[points.length - 1].v;
+      for (let j = 0; j < points.length - 1; j++) {
+        if (worldX <= points[j + 1].x) {
+          const t = (worldX - points[j].x) / (points[j + 1].x - points[j].x);
+          return points[j].v + t * (points[j + 1].v - points[j].v);
+        }
+      }
+      return points[points.length - 1].v;
     };
 
-    // Cloud count scales with coverage (0% = 0 clouds, 100% = many clouds)
-    const segmentArea = segmentWidth * visibleHeight;
-    const cloudDensity = 0.008; // clouds per square pixel at 100% coverage
-    const cloudCount = Math.max(0, Math.round(segmentArea * cloudDensity * (cloudCoverage / 100)));
+    CLOUD_DRAW_FNS[run.type](offCtx, totalW, totalH, coverageAt, rng);
 
-    if (cloudCount === 0) return;
+    // Fade left edge for blend with previous run
+    if (leftBlend > 0) {
+      const grad = offCtx.createLinearGradient(0, 0, leftBlend, 0);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      offCtx.globalCompositeOperation = 'destination-out';
+      offCtx.fillStyle = grad;
+      offCtx.fillRect(0, 0, leftBlend, totalH);
+      offCtx.globalCompositeOperation = 'source-over';
+    }
 
-    // Generate evenly-distributed points using Poisson disk sampling
-    const areaPerCloud = segmentArea / cloudCount;
-    const minDistance = Math.sqrt(areaPerCloud) * 0.8;
-    const points = generatePoints(cloudCount, segmentBounds, minDistance, 30, rng);
+    // Fade right edge for blend with next run
+    if (rightBlend > 0) {
+      const grad = offCtx.createLinearGradient(totalW - rightBlend, 0, totalW, 0);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,1)');
+      offCtx.globalCompositeOperation = 'destination-out';
+      offCtx.fillStyle = grad;
+      offCtx.fillRect(totalW - rightBlend, 0, rightBlend, totalH);
+      offCtx.globalCompositeOperation = 'source-over';
+    }
 
-    // Transform points to be denser near the top
-    const transformedPoints = transformPointsDenserAtTop(points, segmentBounds, 1.5);
-
-    // Draw cloud emoji at each point
-    transformedPoints.forEach((point) => {
-      // Deterministic cloud size
-      const size = 15 + rng() * 5;
-      drawEmoji(ctx, '☁️', point.x, point.y, size);
-    });
-  });
+    ctx.drawImage(offscreen, drawStart, 0);
+  }
 }
