@@ -2180,6 +2180,236 @@ const overnightSnowClearingBase: BaseHourData[] = [
 ];
 
 // ============================================================================
+// Pattern 11: Wintry Mix
+// Rain transitions to mixed sleet/freezing rain as cold air undercuts warm air,
+// then to snow. SW winds during rain lean right; NE winds during mix lean left.
+// ============================================================================
+
+const wintryMixBase: BaseHourData[] = [
+  // Hours 0-5: Cloudy night, pre-storm
+  {
+    condition: 'cloudy',
+    cloud_coverage: 80,
+    precipitation: 0,
+    precipitation_probability: 30,
+    wind_speed: 6,
+    wind_bearing: 200,
+    humidity: 72,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 85,
+    precipitation: 0,
+    precipitation_probability: 40,
+    wind_speed: 7,
+    wind_bearing: 210,
+    humidity: 75,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 90,
+    precipitation: 0,
+    precipitation_probability: 55,
+    wind_speed: 9,
+    wind_bearing: 215,
+    humidity: 78,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 95,
+    precipitation: 0,
+    precipitation_probability: 65,
+    wind_speed: 10,
+    wind_bearing: 220,
+    humidity: 80,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 98,
+    precipitation: 0.05,
+    precipitation_probability: 75,
+    wind_speed: 11,
+    wind_bearing: 220,
+    humidity: 83,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 100,
+    precipitation: 0.1,
+    precipitation_probability: 80,
+    wind_speed: 12,
+    wind_bearing: 225,
+    humidity: 85,
+  },
+  // Hours 6-9: Rain (warm sector, SW wind — streaks lean right)
+  {
+    condition: 'rainy',
+    cloud_coverage: 100,
+    precipitation: 0.3,
+    precipitation_probability: 90,
+    wind_speed: 14,
+    wind_bearing: 230,
+    humidity: 88,
+  },
+  {
+    condition: 'rainy',
+    cloud_coverage: 100,
+    precipitation: 0.5,
+    precipitation_probability: 95,
+    wind_speed: 16,
+    wind_bearing: 235,
+    humidity: 90,
+  },
+  {
+    condition: 'rainy',
+    cloud_coverage: 100,
+    precipitation: 0.4,
+    precipitation_probability: 92,
+    wind_speed: 18,
+    wind_bearing: 240,
+    humidity: 90,
+  },
+  {
+    condition: 'rainy',
+    cloud_coverage: 100,
+    precipitation: 0.3,
+    precipitation_probability: 88,
+    wind_speed: 17,
+    wind_bearing: 240,
+    humidity: 89,
+  },
+  // Hours 10-15: Wintry mix (NE wind as cold air undercuts — streaks lean left)
+  {
+    condition: 'snowy-rainy',
+    cloud_coverage: 100,
+    precipitation: 0.3,
+    precipitation_probability: 92,
+    wind_speed: 20,
+    wind_bearing: 60,
+    humidity: 92,
+  },
+  {
+    condition: 'snowy-rainy',
+    cloud_coverage: 100,
+    precipitation: 0.4,
+    precipitation_probability: 95,
+    wind_speed: 22,
+    wind_bearing: 50,
+    humidity: 93,
+  },
+  {
+    condition: 'snowy-rainy',
+    cloud_coverage: 100,
+    precipitation: 0.5,
+    precipitation_probability: 98,
+    wind_speed: 24,
+    wind_bearing: 45,
+    humidity: 94,
+  },
+  {
+    condition: 'snowy-rainy',
+    cloud_coverage: 100,
+    precipitation: 0.4,
+    precipitation_probability: 95,
+    wind_speed: 22,
+    wind_bearing: 45,
+    humidity: 94,
+  },
+  {
+    condition: 'snowy-rainy',
+    cloud_coverage: 100,
+    precipitation: 0.3,
+    precipitation_probability: 90,
+    wind_speed: 20,
+    wind_bearing: 40,
+    humidity: 93,
+  },
+  {
+    condition: 'snowy-rainy',
+    cloud_coverage: 100,
+    precipitation: 0.2,
+    precipitation_probability: 85,
+    wind_speed: 18,
+    wind_bearing: 35,
+    humidity: 92,
+  },
+  // Hours 16-19: Snow (NNE wind)
+  {
+    condition: 'snowy',
+    cloud_coverage: 100,
+    precipitation: 0.2,
+    precipitation_probability: 85,
+    wind_speed: 16,
+    wind_bearing: 30,
+    humidity: 90,
+  },
+  {
+    condition: 'snowy',
+    cloud_coverage: 100,
+    precipitation: 0.25,
+    precipitation_probability: 88,
+    wind_speed: 15,
+    wind_bearing: 25,
+    humidity: 90,
+  },
+  {
+    condition: 'snowy',
+    cloud_coverage: 100,
+    precipitation: 0.2,
+    precipitation_probability: 82,
+    wind_speed: 14,
+    wind_bearing: 25,
+    humidity: 89,
+  },
+  {
+    condition: 'snowy',
+    cloud_coverage: 100,
+    precipitation: 0.15,
+    precipitation_probability: 78,
+    wind_speed: 12,
+    wind_bearing: 20,
+    humidity: 88,
+  },
+  // Hours 20-23: Tapering snow
+  {
+    condition: 'snowy',
+    cloud_coverage: 100,
+    precipitation: 0.1,
+    precipitation_probability: 70,
+    wind_speed: 10,
+    wind_bearing: 15,
+    humidity: 87,
+  },
+  {
+    condition: 'snowy',
+    cloud_coverage: 95,
+    precipitation: 0.08,
+    precipitation_probability: 60,
+    wind_speed: 9,
+    wind_bearing: 15,
+    humidity: 86,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 90,
+    precipitation: 0.02,
+    precipitation_probability: 40,
+    wind_speed: 8,
+    wind_bearing: 10,
+    humidity: 84,
+  },
+  {
+    condition: 'cloudy',
+    cloud_coverage: 85,
+    precipitation: 0,
+    precipitation_probability: 25,
+    wind_speed: 7,
+    wind_bearing: 10,
+    humidity: 82,
+  },
+];
+
+// ============================================================================
 // Create All Variations
 // ============================================================================
 
@@ -2193,6 +2423,7 @@ export const coldFront = createAllVariations(coldFrontBase);
 export const marineLayer = createAllVariations(marineLayerBase);
 export const allDayOvercast = createAllVariations(allDayOvercastBase);
 export const overnightSnowClearing = createAllVariations(overnightSnowClearingBase);
+export const wintryMix = createAllVariations(wintryMixBase);
 
 // Combined export for Storybook
 export const allScenarios = {
@@ -2206,6 +2437,7 @@ export const allScenarios = {
   marineLayer,
   allDayOvercast,
   overnightSnowClearing,
+  wintryMix,
 };
 
 // ============================================================================

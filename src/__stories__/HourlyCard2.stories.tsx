@@ -35,6 +35,9 @@ function getSunTimesForForecast(forecast: WeatherForecast[] | undefined) {
 const meta: Meta<typeof HourlyChart> = {
   title: 'Weather/HourlyCard2',
   component: HourlyChart,
+  args: {
+    maxItems: 24,
+  },
   parameters: {
     layout: 'padded',
     backgrounds: {
@@ -129,6 +132,7 @@ function PatternGrid({ pattern, patternName }: PatternGridProps) {
                 forecast={data}
                 sunTimes={getSunTimesForForecast(data)}
                 getTemperatureColor={createColorFnForSample(data)}
+                maxItems={24}
               />
             </div>
           </div>
@@ -158,6 +162,7 @@ function AllPatternsGrid({ season }: AllPatternsGridProps) {
     { name: 'Marine Layer', data: samples.marineLayer },
     { name: 'All-Day Overcast', data: samples.allDayOvercast },
     { name: 'Overnight Snow Clearing', data: samples.overnightSnowClearing },
+    { name: 'Wintry Mix', data: samples.wintryMix },
   ];
 
   return (
@@ -191,6 +196,7 @@ function AllPatternsGrid({ season }: AllPatternsGridProps) {
                 forecast={forecast}
                 sunTimes={getSunTimesForForecast(forecast)}
                 getTemperatureColor={createColorFnForSample(forecast)}
+                maxItems={24}
               />
             </div>
           </div>
@@ -320,6 +326,12 @@ export const OvernightSnowClearingAllSeasons: Story = {
   parameters: { layout: 'fullscreen' },
 };
 
+export const WintryMixAllSeasons: Story = {
+  name: '🌧️❄️ Wintry Mix - All Seasons',
+  render: () => <PatternGrid pattern={samples.wintryMix} patternName="Wintry Mix" />,
+  parameters: { layout: 'fullscreen' },
+};
+
 // ============================================================================
 // Individual Stories (for detailed viewing)
 // ============================================================================
@@ -411,6 +423,16 @@ export const AllDayOvercastFall: Story = {
     forecast: samples.allDayOvercast.lateFall,
     sunTimes: getSunTimesForForecast(samples.allDayOvercast.lateFall),
     getTemperatureColor: createColorFnForSample(samples.allDayOvercast.lateFall),
+  },
+};
+
+export const WintryMixWinter: Story = {
+  name: '🌧️❄️ Wintry Mix - Winter',
+  render: (args) => <HourlyChartWrapper {...(args as unknown as HourlyChartStoryArgs)} />,
+  args: {
+    forecast: samples.wintryMix.winter,
+    sunTimes: getSunTimesForForecast(samples.wintryMix.winter),
+    getTemperatureColor: createColorFnForSample(samples.wintryMix.winter),
   },
 };
 

@@ -70,6 +70,52 @@ function drawEmoji(
   ctx.restore();
 }
 
+/**
+ * Convert wind bearing (meteorological degrees, 0=N, 90=E) and speed to a
+ * horizontal lean offset per unit of vertical drop.
+ *
+ * Wind bearing describes where the wind is coming FROM, so a 270° (westerly)
+ * wind blows eastward → streaks lean right (positive dx).
+ * Lean is capped at ±0.7 so streaks never go fully horizontal.
+ */
+function windLean(bearing: number | undefined, speed: number | undefined): number {
+  if (bearing === undefined || speed === undefined || speed === 0) return 0.25;
+  // Convert: wind FROM bearing → wind blows TO bearing+180
+  const toRad = ((bearing + 180) % 360) * (Math.PI / 180);
+  // East component of wind direction (positive = rightward lean)
+  const eastComponent = Math.sin(toRad);
+  // Scale by speed — clamp lean between -0.7 and 0.7
+  const lean = eastComponent * Math.min(speed / 30, 1) * 0.7;
+  return Math.max(-0.7, Math.min(0.7, lean));
+}
+
+/**
+ * Draw rain streaks as diagonal lines for a set of points.
+ * All streaks for a segment are batched into a single stroke call.
+ */
+function drawRainStreaks(
+  ctx: CanvasRenderingContext2D,
+  points: { x: number; y: number }[],
+  rng: () => number,
+  lean: number,
+): void {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(180, 220, 255, 1)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  for (const point of points) {
+    const length = 20 + rng() * 8; // 12–20px
+    const dy = length / Math.sqrt(1 + lean * lean);
+    const dx = lean * dy;
+    ctx.moveTo(point.x, point.y);
+    ctx.lineTo(point.x + dx, point.y + dy);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ============================================================================
 // Main Drawing Function
 // ============================================================================
@@ -121,20 +167,19 @@ export function drawPrecipitation(canvas: HTMLCanvasElement, forecast: WeatherFo
     const minDistance = Math.max(8, Math.min(20, calculatedDistance));
     const points = generatePoints(particleCount, segmentBounds, minDistance, 30, rng);
 
-    // Determine emoji for each particle (deterministic for mixed precipitation)
-    const getEmoji = (): string => {
-      if (isRain && isSnow) {
-        // Mixed: deterministically choose
-        return rng() < 0.5 ? '💧' : '❄️';
-      }
-      if (isSnow) return '❄️';
-      return '💧';
-    };
+    const lean = windLean(hour.wind_bearing, hour.wind_speed);
 
-    // Draw emoji at each point
-    points.forEach((point) => {
-      const emoji = getEmoji();
-      drawEmoji(ctx, emoji, point.x, point.y, 10);
-    });
+    if (isRain && isSnow) {
+      // Mixed: rain streaks for half, snowflakes for the other half
+      const rainPoints = points.filter(() => rng() < 0.5);
+      const snowPoints = points.filter((p) => !rainPoints.includes(p));
+      drawRainStreaks(ctx, rainPoints, rng, lean);
+      snowPoints.forEach((point) => drawEmoji(ctx, '❄️', point.x, point.y, 10));
+    } else if (isSnow) {
+      points.forEach((point) => drawEmoji(ctx, '❄️', point.x, point.y, 10));
+    } else {
+      // Pure rain: diagonal streaks
+      drawRainStreaks(ctx, points, rng, lean);
+    }
   });
 }
