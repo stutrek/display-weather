@@ -7,11 +7,12 @@ import type { SunTimes, WeatherForecast } from '../WeatherContext';
 import { blurCanvasInPlace, supportsNativeBlur } from './blur';
 import { createTemperaturePositioner } from './canvasHelpers';
 import { drawCirrus } from './cloudCirrus';
+import { drawCumulonimbus } from './cloudCumulonimbus';
 import { drawCumulus } from './cloudCumulus';
 import { drawStratocumulus } from './cloudStratocumulus';
 import { drawStratus } from './cloudStratus';
 import { type Bounds, generatePoints } from './generatePoints';
-import { type CloudType, inferCloudType } from './inferCloudType';
+import { type CloudType, inferCloudLayers } from './inferCloudType';
 import { createRng } from './random';
 // ============================================================================
 // Constants
@@ -416,9 +417,10 @@ const CLOUD_DRAW_FNS: Record<
   ) => void
 > = {
   cumulus: drawCumulus,
-  stratocumulus: drawStratus,
-  stratus: drawStratus,
+  stratocumulus: drawCirrus,
+  stratus: drawCirrus,
   cirrus: drawCirrus,
+  cumulonimbus: drawCumulonimbus,
 };
 
 export function drawClouds(
@@ -451,10 +453,10 @@ export function drawClouds(
   const sunriseX = sunEventX(sunTimes.sunrise ?? undefined) ?? 0;
   const sunsetX = sunEventX(sunTimes.sunset ?? undefined) ?? width;
 
-  // Build runs of consecutive same-type hours, ignoring day/night.
+  // Build runs of consecutive same-layer hours, ignoring day/night.
   // Daylight clamping (below) handles the sun boundaries.
   interface Run {
-    type: Exclude<CloudType, 'none'>;
+    layers: Exclude<CloudType, 'none'>[];
     startX: number;
     endX: number;
     coveragePoints: { x: number; v: number }[];
@@ -463,8 +465,8 @@ export function drawClouds(
 
   for (let i = 0; i < forecast.length; i++) {
     const hour = forecast[i];
-    const type = inferCloudType(hour, false);
-    if (type === 'none') continue;
+    const layers = inferCloudLayers(hour, false);
+    if (layers.length === 0) continue;
 
     const startX = i * segmentWidth;
     const endX = (i + 1) * segmentWidth;
@@ -472,16 +474,11 @@ export function drawClouds(
     const centerX = startX + segmentWidth / 2;
 
     const last = runs[runs.length - 1];
-    if (last && last.type === type && last.endX === startX) {
+    if (last && last.layers.join(',') === layers.join(',') && last.endX === startX) {
       last.endX = endX;
       last.coveragePoints.push({ x: centerX, v: coverage });
     } else {
-      runs.push({
-        type,
-        startX,
-        endX,
-        coveragePoints: [{ x: centerX, v: coverage }],
-      });
+      runs.push({ layers, startX, endX, coveragePoints: [{ x: centerX, v: coverage }] });
     }
   }
 
@@ -510,8 +507,6 @@ export function drawClouds(
     const offCtx = offscreen.getContext('2d');
     if (!offCtx) continue;
 
-    const rng = createRng(`clouds-${run.type}-${run.startX}`);
-
     // Build coverageAt mapping local offscreen x → interpolated 0–1 coverage
     const points = run.coveragePoints;
     const coverageAt = (localX: number): number => {
@@ -528,7 +523,10 @@ export function drawClouds(
       return points[points.length - 1].v;
     };
 
-    CLOUD_DRAW_FNS[run.type](offCtx, totalW, totalH, coverageAt, rng);
+    for (const layer of run.layers) {
+      const rng = createRng(`clouds-${layer}-${run.startX}`);
+      CLOUD_DRAW_FNS[layer](offCtx, totalW, totalH, coverageAt, rng);
+    }
 
     // Fade left edge for blend with previous run
     if (leftBlend > 0) {

@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { Fragment } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { drawCirrus } from '../WeatherCard/HourlyChart/cloudCirrus';
 import { drawCumulonimbus } from '../WeatherCard/HourlyChart/cloudCumulonimbus';
 import { drawCumulus } from '../WeatherCard/HourlyChart/cloudCumulus';
 import { drawStratocumulus } from '../WeatherCard/HourlyChart/cloudStratocumulus';
-import { SvgCloud } from '../WeatherCard/HourlyChart/cloudSvg';
 import { createRng } from '../WeatherCard/HourlyChart/random';
 
 // ============================================================================
@@ -80,33 +80,10 @@ const ALGORITHMS = [
     ),
   },
   {
-    name: 'Stratus',
-    note: 'SVG feTurbulence fractalNoise 0.045×0.07, 3 octaves.',
-    render: (coverage: number, idx: number) => (
-      <SvgCloud
-        coverage={coverage}
-        width={W}
-        height={H}
-        freqX={0.045}
-        freqY={0.07}
-        numOctaves={3}
-        uid={`st-${idx}-${Math.round(coverage * 100)}`}
-      />
-    ),
-  },
-  {
     name: 'Cirrus',
-    note: 'SVG feTurbulence anisotropic 0.008×0.04, 6 octaves.',
+    note: 'Canvas radial-gradient ellipses, fixed opacity, strand count scales with coverage.',
     render: (coverage: number, idx: number) => (
-      <SvgCloud
-        coverage={coverage}
-        width={W}
-        height={H}
-        freqX={0.008}
-        freqY={0.04}
-        numOctaves={6}
-        uid={`ci-${idx}-${Math.round(coverage * 100)}`}
-      />
+      <CloudCanvas draw={drawCirrus} coverage={coverage} seed={`ci-${idx}`} width={W} height={H} />
     ),
   },
 ];

@@ -1,8 +1,3 @@
-/**
- * Cirrus: thin wispy horizontal streaks drawn as radial-gradient ellipses.
- * Each strand is very wide and very thin, low opacity, offset randomly in y.
- * Multiple overlapping strands create the layered ice-crystal look.
- */
 export function drawCirrus(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -10,14 +5,15 @@ export function drawCirrus(
   coverageAt: (x: number) => number,
   rng: () => number,
 ): void {
-  const strandCount = Math.round(4 + coverageAt(width / 2) * 14);
+  const midCov = coverageAt(width / 2);
+  const strandCount = Math.round(3 + midCov * 60);
 
   for (let i = 0; i < strandCount; i++) {
     const cx = (rng() - 0.1) * width;
     const cy = rng() * height;
     const rx = width * (0.25 + rng() * 0.5);
     const ry = 3 + rng() * 7;
-    const alpha = (0.12 + rng() * 0.28) * Math.max(0.2, coverageAt(cx));
+    const alpha = 0.22 + rng() * 0.32;
 
     ctx.save();
     ctx.translate(cx, cy);

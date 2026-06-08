@@ -12,6 +12,7 @@ import {
   drawTemperatureLine,
   getWeatherIconForTime,
 } from './canvasHelpers';
+import { inferCloudLayers } from './inferCloudType';
 import { drawPrecipitation } from './precipitation';
 import { applyTemperatureMask, drawClouds, drawSkyBackground, drawStars } from './sky';
 import './styles'; // registers styles via css`` tagged template
@@ -212,8 +213,22 @@ export function HourlyChart({
           <canvas
             ref={canvasRef}
             className="hourly-canvas"
-            style={{
-              height: `${height}px`,
+            style={{ height: `${height}px` }}
+            onClick={(e) => {
+              const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const index = Math.round((x / rect.width) * (forecast.length - 1));
+              const hour = forecast[Math.max(0, Math.min(forecast.length - 1, index))];
+              console.log('[HourlyChart click]', {
+                datetime: hour.datetime,
+                condition: hour.condition,
+                cloud_coverage: hour.cloud_coverage,
+                humidity: hour.humidity,
+                precipitation: hour.precipitation,
+                uv_index: hour.uv_index,
+                temperature: hour.temperature,
+                layers: inferCloudLayers(hour),
+              });
             }}
           />
 

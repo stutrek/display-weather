@@ -1,4 +1,10 @@
-export type CloudType = 'cumulus' | 'stratocumulus' | 'stratus' | 'cirrus' | 'none';
+export type CloudType =
+  | 'cumulus'
+  | 'stratocumulus'
+  | 'stratus'
+  | 'cirrus'
+  | 'cumulonimbus'
+  | 'none';
 
 export interface CloudForecastEntry {
   condition?: string;
@@ -10,96 +16,47 @@ export interface CloudForecastEntry {
 }
 
 /**
- * Infer the dominant cloud type from an hourly forecast entry.
+ * Returns an ordered list of cloud layers to render, back (high altitude) → front (low altitude).
+ * Empty array means clear sky.
  *
- * Uses a weighted scoring approach across condition, cloud coverage, humidity,
- * precipitation, and UV index. Returns 'none' when the sky is essentially clear.
- *
- * Mapping to our four rendered types:
- *   cirrus        — high, wispy, thin ice cloud; low humidity, low coverage, no precip
- *   cumulus       — fair-weather puffy clouds; moderate coverage, good UV, dry
- *   stratocumulus — low lumpy layers; moderate–high coverage, little precip
- *   stratus       — flat uniform overcast or fog; high humidity, possible drizzle
+ * Five explicit combinations:
+ *   ['cirrus']                 — overcast, rain, fog, or low-coverage wisps
+ *   ['cumulus']                — fair-weather scattered/broken cumulus
+ *   ['cirrus', 'cumulus']      — dry fair weather with high-altitude ice cloud above
+ *   ['cumulonimbus']           — (reserved, rare — storm without anvil)
+ *   ['cirrus', 'cumulonimbus'] — thunderstorm with anvil cirrus spreading above
  */
-export function inferCloudType(f: CloudForecastEntry, isNight = false): CloudType {
-  if (isNight) return 'none';
+export function inferCloudLayers(
+  f: CloudForecastEntry,
+  isNight = false,
+): Exclude<CloudType, 'none'>[] {
+  if (isNight) return [];
   const condition = f.condition ?? '';
   const coverage = (f.cloud_coverage ?? 50) / 100;
   const humidity = f.humidity ?? 60;
   const precip = f.precipitation ?? 0;
   const uv = f.uv_index ?? 4;
 
-  // Clear sky — nothing to render
-  if (coverage < 0.01) return 'none';
-  if (condition === 'sunny' || condition === 'clear-night' || condition === 'clear') {
-    if (coverage < 0.15) return 'none';
-  }
-
-  // Fog always reads as stratus
-  if (condition === 'fog' || condition === 'hazy' || condition === 'foggy') return 'stratus';
-
-  // Precipitation conditions → stratus (nimbostratus / cumulonimbus base layer)
+  if (coverage < 0.01) return [];
   if (
-    ['rainy', 'pouring', 'snowy', 'snowy-rainy', 'hail', 'lightning-rainy', 'exceptional'].includes(
-      condition,
-    )
+    (condition === 'sunny' || condition === 'clear' || condition === 'clear-night') &&
+    coverage < 0.15
   )
-    return 'stratus';
+    return [];
 
-  // Score each type
-  let cumulus = 0;
-  let stratocumulus = 0;
-  let stratus = 0;
-  let cirrus = 0;
+  if (['fog', 'hazy', 'foggy'].includes(condition)) return ['cirrus'];
+  if (['lightning-rainy', 'exceptional', 'pouring', 'hail'].includes(condition))
+    return ['cirrus', 'cumulonimbus'];
+  if (['rainy', 'snowy', 'snowy-rainy'].includes(condition) || precip > 0.3) return ['cirrus'];
 
-  // --- Cloud coverage ---
-  if (coverage < 0.25) cirrus += 2;
-  if (coverage >= 0.15 && coverage < 0.65) cumulus += 2;
-  if (coverage >= 0.45 && coverage < 0.88) stratocumulus += 2;
-  if (coverage >= 0.78) stratus += 2;
-  // Near-total overcast (cloudy/partlycloudy but solid cover) reads as stratus
-  if (
-    coverage >= 0.92 &&
-    (condition === 'cloudy' || condition === 'partlycloudy' || condition === 'overcast')
-  )
-    stratus += 2;
+  // Overcast / near-total coverage → flat cirrus layer
+  if (coverage >= 0.8 || condition === 'overcast') return ['cirrus'];
 
-  // --- Humidity ---
-  // Cirrus forms at altitude in dry upper air; surface humidity stays low
-  if (humidity < 45) cirrus += 1.5;
-  else if (humidity < 65) cumulus += 1;
-  else if (humidity < 82) stratocumulus += 1;
-  else stratus += 1.5;
+  // Very low coverage (scattered wisps)
+  if (coverage < 0.15) return ['cirrus'];
 
-  // --- Precipitation ---
-  if (precip === 0) {
-    cumulus += 0.5;
-    cirrus += 0.5;
-  } else if (precip < 0.3) {
-    stratocumulus += 1;
-  } else {
-    stratus += 2;
-  }
+  // Cirrus layer: dry upper air + strong UV → ice crystals visible above cumulus
+  const hasCirrusLayer = humidity < 50 && uv > 6;
 
-  // --- UV index ---
-  // High UV means thin or broken cloud (cirrus lets most through; cumulus gaps)
-  if (uv > 7) cirrus += 1;
-  else if (uv > 3) cumulus += 0.5;
-  else if (uv <= 1) stratus += 0.5;
-
-  // --- Condition hint ---
-  if (condition === 'partlycloudy') {
-    cumulus += 1;
-    stratocumulus += 0.5;
-  } else if (condition === 'cloudy') {
-    stratocumulus += 1.5;
-    stratus += 0.5;
-  } else if (condition === 'overcast') {
-    stratus += 2;
-  } else if (condition === 'sunny' || condition === 'clear-night') {
-    cumulus += 1.5;
-  }
-
-  const scores: Record<CloudType, number> = { cumulus, stratocumulus, stratus, cirrus, none: 0 };
-  return Object.entries(scores).sort(([, a], [, b]) => b - a)[0][0] as CloudType;
+  return hasCirrusLayer ? ['cirrus', 'cumulus'] : ['cumulus'];
 }
