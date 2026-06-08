@@ -434,13 +434,24 @@ export function drawClouds(
   const dpr = window.devicePixelRatio || 1;
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
-  const segmentWidth = width / forecast.length;
-
   // Use the same timestamp-based positioning as drawSkyBackground so cloud
   // boundaries align exactly with the sky colour transition.
   const firstTime = new Date(forecast[0].datetime).getTime();
   const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
   const timeRange = lastTime - firstTime;
+
+  // Map each hour's timestamp to a canvas x position (same formula as sky background).
+  // Segment boundaries are midpoints between adjacent timestamps so they stay
+  // in the same coordinate space as sunriseX / sunsetX.
+  const hourX = (i: number): number => {
+    const t = new Date(forecast[i].datetime).getTime();
+    return ((t - firstTime) / timeRange) * width;
+  };
+  const segStartX = (i: number): number => (i === 0 ? 0 : (hourX(i - 1) + hourX(i)) / 2);
+  const segEndX = (i: number): number =>
+    i === forecast.length - 1 ? width : (hourX(i) + hourX(i + 1)) / 2;
+
+  const segmentWidth = width / forecast.length; // used only for blendW
 
   const sunEventX = (sunTime: Date | undefined): number | null => {
     if (!sunTime || timeRange === 0) return null;
@@ -468,10 +479,10 @@ export function drawClouds(
     const layers = inferCloudLayers(hour, false);
     if (layers.length === 0) continue;
 
-    const startX = i * segmentWidth;
-    const endX = (i + 1) * segmentWidth;
+    const startX = segStartX(i);
+    const endX = segEndX(i);
     const coverage = (hour.cloud_coverage ?? 50) / 100;
-    const centerX = startX + segmentWidth / 2;
+    const centerX = hourX(i);
 
     const last = runs[runs.length - 1];
     if (last && last.layers.join(',') === layers.join(',') && last.endX === startX) {

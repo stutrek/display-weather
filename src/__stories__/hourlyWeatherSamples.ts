@@ -2469,12 +2469,9 @@ export function calculateSunTimes(dateString: string, latitude = 40): SunTimes {
   const sunriseOffset = -hourAngle / 15; // Convert to hours
   const sunsetOffset = hourAngle / 15;
 
-  // Calculate actual times
-  const sunrise = new Date(date);
-  sunrise.setHours(12 + sunriseOffset, Math.round((sunriseOffset % 1) * 60), 0, 0);
-
-  const sunset = new Date(date);
-  sunset.setHours(12 + sunsetOffset, Math.round((sunsetOffset % 1) * 60), 0, 0);
+  // Calculate actual times — add offset in ms to avoid negative-modulo hour rollback
+  const sunrise = new Date(date.getTime() + sunriseOffset * 3600000);
+  const sunset = new Date(date.getTime() + sunsetOffset * 3600000);
 
   // Dawn is 30 minutes before sunrise, dusk is 30 minutes after sunset
   const dawn = new Date(sunrise);
