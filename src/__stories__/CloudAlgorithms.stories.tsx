@@ -54,14 +54,14 @@ const SKY_BLUE = '#44DAFF';
 const ALGORITHMS = [
   {
     name: 'Cumulus',
-    note: 'Radial gradient circles, multiple vertical passes at high coverage.',
+    note: 'Distinct flat-based clouds: puff row with domed envelope, single per-cloud shading gradient.',
     render: (coverage: number, idx: number) => (
       <CloudCanvas draw={drawCumulus} coverage={coverage} seed={`cc-${idx}`} width={W} height={H} />
     ),
   },
   {
     name: 'Cumulonimbus',
-    note: 'Larger circles, fewer clusters, heavy dark base gradient.',
+    note: 'Storm towers: tapering puff tiers with lean, heavy base shade, bright crowns.',
     render: (coverage: number, idx: number) => (
       <CloudCanvas
         draw={drawCumulonimbus}
