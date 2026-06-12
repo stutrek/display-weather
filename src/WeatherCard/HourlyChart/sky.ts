@@ -34,7 +34,7 @@ const MASK_BLUR_RADIUS = 12;
  * Determine if a given datetime is during daytime based on sunrise/sunset
  * Only compares time-of-day (hours/minutes/seconds), not the full date
  */
-function isDaytime(datetime: string, sunTimes: SunTimes): boolean {
+function isDaytime(datetime: string | number, sunTimes: SunTimes): boolean {
   const date = new Date(datetime);
 
   // Default to daytime if sun times not available
@@ -115,6 +115,78 @@ function transformPointsDenserAtTop(
       y: bounds.y + compressedY * bounds.height,
     };
   });
+}
+
+interface Interval {
+  start: number;
+  end: number;
+}
+
+/**
+ * Compute the daylight intervals along the canvas x axis, in the same
+ * timestamp-based coordinate space as the sky gradient.
+ *
+ * A window can contain zero, one, or two sun events in any order — an evening
+ * window holds sunset then the next sunrise, an all-night window holds
+ * neither. Spans between boundaries are classified by sampling isDaytime at
+ * their midpoint, so windows with no sun event in range resolve to all-day or
+ * all-night correctly instead of defaulting to daytime.
+ */
+export function getDaylightIntervals(
+  forecast: WeatherForecast[],
+  sunTimes: SunTimes,
+  width: number,
+): Interval[] {
+  const firstTime = new Date(forecast[0].datetime).getTime();
+  const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
+  const timeRange = lastTime - firstTime;
+
+  const eventX = (sunTime: Date | undefined): number | null => {
+    if (!sunTime || timeRange === 0) return null;
+    let t = sunTime.getTime();
+    if (t < firstTime) t += 86400000; // use tomorrow's event if it already passed
+    if (t < firstTime || t > lastTime) return null;
+    return ((t - firstTime) / timeRange) * width;
+  };
+
+  const hourX = (i: number): number =>
+    timeRange === 0
+      ? 0
+      : ((new Date(forecast[i].datetime).getTime() - firstTime) / timeRange) * width;
+
+  const eventXs = [eventX(sunTimes.sunrise), eventX(sunTimes.sunset)].filter(
+    (x): x is number => x !== null,
+  );
+
+  // Span boundaries: canvas edges plus sun events inside the window. If
+  // adjacent hours flip day/night without a sun event between them (missing
+  // sun data, or an event just outside the window), insert a boundary at the
+  // segment midpoint so the flip still gets a border.
+  const boundaries = [0, width, ...eventXs];
+  for (let i = 0; i < forecast.length - 1; i++) {
+    const flips =
+      isDaytime(forecast[i].datetime, sunTimes) !== isDaytime(forecast[i + 1].datetime, sunTimes);
+    if (!flips) continue;
+    const gapStart = hourX(i);
+    const gapEnd = hourX(i + 1);
+    if (!eventXs.some((x) => x >= gapStart && x <= gapEnd)) {
+      boundaries.push((gapStart + gapEnd) / 2);
+    }
+  }
+  boundaries.sort((a, b) => a - b);
+
+  // Keep the spans whose midpoint falls in daylight
+  const intervals: Interval[] = [];
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const start = boundaries[i];
+    const end = boundaries[i + 1];
+    if (end <= start) continue;
+    const midTime = firstTime + ((start + end) / 2 / width) * timeRange;
+    if (isDaytime(midTime, sunTimes)) {
+      intervals.push({ start, end });
+    }
+  }
+  return intervals;
 }
 
 // ============================================================================
@@ -348,29 +420,30 @@ export function drawStars(
   const dpr = window.devicePixelRatio || 1;
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
-  const segmentWidth = width / forecast.length;
 
-  // Same timestamp-based positioning as drawSkyBackground and drawClouds
+  // Same timestamp-based positioning as drawSkyBackground and drawClouds so
+  // star segments line up with the hours and the sun boundaries.
   const firstTime = new Date(forecast[0].datetime).getTime();
   const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
   const timeRange = lastTime - firstTime;
+  const hourX = (i: number): number =>
+    timeRange === 0
+      ? 0
+      : ((new Date(forecast[i].datetime).getTime() - firstTime) / timeRange) * width;
+  const segStartX = (i: number): number => (i === 0 ? 0 : (hourX(i - 1) + hourX(i)) / 2);
+  const segEndX = (i: number): number =>
+    i === forecast.length - 1 ? width : (hourX(i) + hourX(i + 1)) / 2;
 
-  const sunEventX = (sunTime: Date | undefined): number | null => {
-    if (!sunTime || timeRange === 0) return null;
-    let t = sunTime.getTime();
-    if (t < firstTime) t += 86400000;
-    if (t < firstTime || t > lastTime) return null;
-    return ((t - firstTime) / timeRange) * width;
-  };
-
-  const sunriseX = sunEventX(sunTimes.sunrise ?? undefined) ?? 0;
-  const sunsetX = sunEventX(sunTimes.sunset ?? undefined) ?? width;
-
-  // Clip drawing to night regions: [0, sunriseX] and [sunsetX, width]
+  // Clip drawing to the night regions: the complement of the daylight intervals
+  const dayIntervals = getDaylightIntervals(forecast, sunTimes, width);
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, sunriseX, height);
-  ctx.rect(sunsetX, 0, width - sunsetX, height);
+  let cursor = 0;
+  for (const day of dayIntervals) {
+    if (day.start > cursor) ctx.rect(cursor, 0, day.start - cursor, height);
+    cursor = day.end;
+  }
+  if (cursor < width) ctx.rect(cursor, 0, width - cursor, height);
   ctx.clip();
 
   forecast.forEach((hour, index) => {
@@ -379,13 +452,13 @@ export function drawStars(
     const clearness = 1 - cloudCoverage / 100;
 
     const segmentBounds: Bounds = {
-      x: index * segmentWidth,
+      x: segStartX(index),
       y: 0,
-      width: segmentWidth,
+      width: segEndX(index) - segStartX(index),
       height,
     };
 
-    const segmentArea = segmentWidth * height;
+    const segmentArea = segmentBounds.width * height;
     const baseStarDensity = 0.03;
     const starCount = Math.max(1, Math.round(segmentArea * baseStarDensity * clearness));
 
@@ -396,7 +469,9 @@ export function drawStars(
     transformedPoints.forEach((point) => {
       const radius = 0.25 + rng() / 2;
       const opacity = 0.4 + rng() * 0.6;
-      ctx.globalAlpha = opacity - 0.5 + clearness * 0.5;
+      // Clamp: canvas ignores out-of-range globalAlpha assignments, so a
+      // negative value would silently keep the previous star's alpha
+      ctx.globalAlpha = Math.max(0, opacity - 0.5 + clearness * 0.5);
       ctx.beginPath();
       ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
       ctx.fill();
@@ -453,16 +528,7 @@ export function drawClouds(
 
   const segmentWidth = width / forecast.length; // used only for blendW
 
-  const sunEventX = (sunTime: Date | undefined): number | null => {
-    if (!sunTime || timeRange === 0) return null;
-    let t = sunTime.getTime();
-    if (t < firstTime) t += 86400000; // use tomorrow's event if it already passed
-    if (t < firstTime || t > lastTime) return null;
-    return ((t - firstTime) / timeRange) * width;
-  };
-
-  const sunriseX = sunEventX(sunTimes.sunrise ?? undefined) ?? 0;
-  const sunsetX = sunEventX(sunTimes.sunset ?? undefined) ?? width;
+  const dayIntervals = getDaylightIntervals(forecast, sunTimes, width);
 
   // Build runs of consecutive same-layer hours, ignoring day/night.
   // Daylight clamping (below) handles the sun boundaries.
@@ -495,72 +561,79 @@ export function drawClouds(
 
   const blendW = segmentWidth * 1.5;
 
-  for (let ri = 0; ri < runs.length; ri++) {
-    const run = runs[ri];
+  for (const day of dayIntervals) {
+    for (let ri = 0; ri < runs.length; ri++) {
+      const run = runs[ri];
 
-    // Clamp run to daylight
-    const clampStart = Math.max(run.startX, sunriseX);
-    const clampEnd = Math.min(run.endX, sunsetX);
-    if (clampStart >= clampEnd) continue;
+      // Clamp run to this daylight interval
+      const clampStart = Math.max(run.startX, day.start);
+      const clampEnd = Math.min(run.endX, day.end);
+      if (clampStart >= clampEnd) continue;
 
-    // Blend at cloud-type transitions within daylight; hard cut at sun boundaries
-    const leftBlend = ri > 0 && clampStart === run.startX ? blendW : 0;
-    const rightBlend = ri < runs.length - 1 && clampEnd === run.endX ? blendW : 0;
+      // Blend at cloud-type transitions strictly inside daylight; hard cut at
+      // sun boundaries and canvas edges. The strict comparison keeps a run
+      // that starts exactly at sunrise from fading out into the night, and
+      // guarantees the neighbouring run is also drawn in this interval.
+      const leftBlend =
+        ri > 0 && run.startX > day.start ? Math.min(blendW, run.startX - day.start) : 0;
+      const rightBlend =
+        ri < runs.length - 1 && run.endX < day.end ? Math.min(blendW, day.end - run.endX) : 0;
 
-    const drawStart = Math.max(clampStart - leftBlend, 0);
-    const drawEnd = Math.min(clampEnd + rightBlend, width);
-    const totalW = Math.ceil(drawEnd - drawStart);
-    const totalH = Math.ceil(height);
+      const drawStart = clampStart - leftBlend;
+      const drawEnd = clampEnd + rightBlend;
+      const totalW = Math.ceil(drawEnd - drawStart);
+      const totalH = Math.ceil(height);
 
-    const offscreen = document.createElement('canvas');
-    offscreen.width = totalW;
-    offscreen.height = totalH;
-    const offCtx = offscreen.getContext('2d');
-    if (!offCtx) continue;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = totalW;
+      offscreen.height = totalH;
+      const offCtx = offscreen.getContext('2d');
+      if (!offCtx) continue;
 
-    // Build coverageAt mapping local offscreen x → interpolated 0–1 coverage
-    const points = run.coveragePoints;
-    const coverageAt = (localX: number): number => {
-      const worldX = localX + drawStart;
-      if (points.length === 1) return points[0].v;
-      if (worldX <= points[0].x) return points[0].v;
-      if (worldX >= points[points.length - 1].x) return points[points.length - 1].v;
-      for (let j = 0; j < points.length - 1; j++) {
-        if (worldX <= points[j + 1].x) {
-          const t = (worldX - points[j].x) / (points[j + 1].x - points[j].x);
-          return points[j].v + t * (points[j + 1].v - points[j].v);
+      // Build coverageAt mapping local offscreen x → interpolated 0–1 coverage
+      const points = run.coveragePoints;
+      const coverageAt = (localX: number): number => {
+        const worldX = localX + drawStart;
+        if (points.length === 1) return points[0].v;
+        if (worldX <= points[0].x) return points[0].v;
+        if (worldX >= points[points.length - 1].x) return points[points.length - 1].v;
+        for (let j = 0; j < points.length - 1; j++) {
+          if (worldX <= points[j + 1].x) {
+            const t = (worldX - points[j].x) / (points[j + 1].x - points[j].x);
+            return points[j].v + t * (points[j + 1].v - points[j].v);
+          }
         }
+        return points[points.length - 1].v;
+      };
+
+      for (const layer of run.layers) {
+        const rng = createRng(`clouds-${layer}-${run.startX}`);
+        CLOUD_DRAW_FNS[layer](offCtx, totalW, totalH, coverageAt, rng);
       }
-      return points[points.length - 1].v;
-    };
 
-    for (const layer of run.layers) {
-      const rng = createRng(`clouds-${layer}-${run.startX}`);
-      CLOUD_DRAW_FNS[layer](offCtx, totalW, totalH, coverageAt, rng);
+      // Fade left edge for blend with previous run
+      if (leftBlend > 0) {
+        const grad = offCtx.createLinearGradient(0, 0, leftBlend, 0);
+        grad.addColorStop(0, 'rgba(0,0,0,1)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        offCtx.globalCompositeOperation = 'destination-out';
+        offCtx.fillStyle = grad;
+        offCtx.fillRect(0, 0, leftBlend, totalH);
+        offCtx.globalCompositeOperation = 'source-over';
+      }
+
+      // Fade right edge for blend with next run
+      if (rightBlend > 0) {
+        const grad = offCtx.createLinearGradient(totalW - rightBlend, 0, totalW, 0);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,1)');
+        offCtx.globalCompositeOperation = 'destination-out';
+        offCtx.fillStyle = grad;
+        offCtx.fillRect(totalW - rightBlend, 0, rightBlend, totalH);
+        offCtx.globalCompositeOperation = 'source-over';
+      }
+
+      ctx.drawImage(offscreen, drawStart, 0);
     }
-
-    // Fade left edge for blend with previous run
-    if (leftBlend > 0) {
-      const grad = offCtx.createLinearGradient(0, 0, leftBlend, 0);
-      grad.addColorStop(0, 'rgba(0,0,0,1)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      offCtx.globalCompositeOperation = 'destination-out';
-      offCtx.fillStyle = grad;
-      offCtx.fillRect(0, 0, leftBlend, totalH);
-      offCtx.globalCompositeOperation = 'source-over';
-    }
-
-    // Fade right edge for blend with next run
-    if (rightBlend > 0) {
-      const grad = offCtx.createLinearGradient(totalW - rightBlend, 0, totalW, 0);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(1, 'rgba(0,0,0,1)');
-      offCtx.globalCompositeOperation = 'destination-out';
-      offCtx.fillStyle = grad;
-      offCtx.fillRect(totalW - rightBlend, 0, rightBlend, totalH);
-      offCtx.globalCompositeOperation = 'source-over';
-    }
-
-    ctx.drawImage(offscreen, drawStart, 0);
   }
 }
