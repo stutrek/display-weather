@@ -5,6 +5,8 @@
  */
 
 // Shadow tone for cloud undersides — a deepened sky blue rather than slate
+import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
+
 const SHADE = '70, 155, 195';
 
 function drawOneCloud(
@@ -85,7 +87,8 @@ export function drawCumulus(
   coverageAt: (x: number) => number,
   rng: () => number,
 ): void {
-  const midCov = coverageAt(width / 2);
+  const { mean: meanCov } = sampleCoverageStats(coverageAt, width);
+  const invCdf = makeCoverageInvCdf(coverageAt, width);
 
   const offscreen = document.createElement('canvas');
   offscreen.width = width;
@@ -95,13 +98,13 @@ export function drawCumulus(
 
   // Fewer, larger clouds — small ones read as dots from across the room.
   // Count scales with width and coverage; cloud size with local coverage.
-  const count = Math.max(2, Math.round((width / 70) * (0.4 + midCov * 2.4)));
+  const count = Math.max(2, Math.round((width / 70) * (0.4 + meanCov * 2.4)));
 
   const clouds: Array<{ cx: number; baseY: number; cloudW: number }> = [];
   for (let i = 0; i < count; i++) {
-    // Stratified placement: one slot per cloud with jitter, so high coverage
-    // fills the strip instead of clumping clouds on top of each other
-    const cx = ((i + 0.5 + (rng() - 0.5) * 0.9) / count) * width;
+    // Stratified slots with jitter, mapped through the coverage inverse-CDF
+    // so cloud density follows the envelope (identity at constant coverage)
+    const cx = invCdf((i + 0.5 + (rng() - 0.5) * 0.9) / count);
     const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
 
     // Thin out clouds in low-coverage regions — controls density, not brightness

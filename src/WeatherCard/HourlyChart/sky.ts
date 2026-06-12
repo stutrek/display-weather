@@ -11,6 +11,11 @@ import { drawCumulonimbus } from './cloudCumulonimbus';
 import { drawCumulus } from './cloudCumulus';
 import { drawStratocumulus } from './cloudStratocumulus';
 import { drawStratus } from './cloudStratus';
+import {
+  type CoveragePoint,
+  makeCoverageInterpolator,
+  sampleCoverageStats,
+} from './coverageEnvelope';
 import { type Bounds, generatePoints } from './generatePoints';
 import { type CloudType, inferCloudLayers } from './inferCloudType';
 import { createRng } from './random';
@@ -498,6 +503,17 @@ const CLOUD_DRAW_FNS: Record<
   cumulonimbus: drawCumulonimbus,
 };
 
+// Back (high altitude) → front (low altitude). Stratus and stratocumulus
+// envelopes are all-zero today (inferCloudLayers never emits them) but the
+// order is ready if they return.
+const RENDER_ORDER: Exclude<CloudType, 'none'>[] = [
+  'cirrus',
+  'stratus',
+  'stratocumulus',
+  'cumulus',
+  'cumulonimbus',
+];
+
 export function drawClouds(
   canvas: HTMLCanvasElement,
   forecast: WeatherForecast[],
@@ -515,125 +531,55 @@ export function drawClouds(
   const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
   const timeRange = lastTime - firstTime;
 
-  // Map each hour's timestamp to a canvas x position (same formula as sky background).
-  // Segment boundaries are midpoints between adjacent timestamps so they stay
-  // in the same coordinate space as sunriseX / sunsetX.
+  if (timeRange === 0) return;
+
+  // Map each hour's timestamp to a canvas x position (same formula as sky
+  // background) so cloud positions align with the sky colour transition.
   const hourX = (i: number): number => {
     const t = new Date(forecast[i].datetime).getTime();
     return ((t - firstTime) / timeRange) * width;
   };
-  const segStartX = (i: number): number => (i === 0 ? 0 : (hourX(i - 1) + hourX(i)) / 2);
-  const segEndX = (i: number): number =>
-    i === forecast.length - 1 ? width : (hourX(i) + hourX(i + 1)) / 2;
 
-  const segmentWidth = width / forecast.length; // used only for blendW
+  // One coverage envelope per cloud type across the whole strip: the hour's
+  // coverage where that layer is present, 0 elsewhere. Night hours included —
+  // they feed correct interpolation right up to the sun boundary. Each type
+  // then renders once as a continuous field, so changing weather reads as
+  // layers waxing and waning rather than a patchwork of per-condition blocks.
+  const envelopes = new Map<Exclude<CloudType, 'none'>, CoveragePoint[]>();
+  for (const type of RENDER_ORDER) envelopes.set(type, []);
+  for (let i = 0; i < forecast.length; i++) {
+    const layers = inferCloudLayers(forecast[i], false);
+    const coverage = (forecast[i].cloud_coverage ?? 50) / 100;
+    const x = hourX(i);
+    for (const type of RENDER_ORDER) {
+      envelopes.get(type)?.push({ x, v: layers.includes(type) ? coverage : 0 });
+    }
+  }
 
   const dayIntervals = getDaylightIntervals(forecast, sunTimes, width);
 
-  // Build runs of consecutive same-layer hours, ignoring day/night.
-  // Daylight clamping (below) handles the sun boundaries.
-  interface Run {
-    layers: Exclude<CloudType, 'none'>[];
-    startX: number;
-    endX: number;
-    coveragePoints: { x: number; v: number }[];
-  }
-  const runs: Run[] = [];
-
-  for (let i = 0; i < forecast.length; i++) {
-    const hour = forecast[i];
-    const layers = inferCloudLayers(hour, false);
-    if (layers.length === 0) continue;
-
-    const startX = segStartX(i);
-    const endX = segEndX(i);
-    const coverage = (hour.cloud_coverage ?? 50) / 100;
-    const centerX = hourX(i);
-
-    const last = runs[runs.length - 1];
-    if (last && last.layers.join(',') === layers.join(',') && last.endX === startX) {
-      last.endX = endX;
-      last.coveragePoints.push({ x: centerX, v: coverage });
-    } else {
-      runs.push({ layers, startX, endX, coveragePoints: [{ x: centerX, v: coverage }] });
-    }
-  }
-
-  const blendW = segmentWidth * 1.5;
-
+  // One render per daylight interval per type, back to front. The hard cut
+  // at sun boundaries comes from sizing the offscreen to the interval.
   for (const day of dayIntervals) {
-    for (let ri = 0; ri < runs.length; ri++) {
-      const run = runs[ri];
+    const intervalW = Math.ceil(day.end - day.start);
+    const intervalH = Math.ceil(height);
+    if (intervalW <= 0) continue;
 
-      // Clamp run to this daylight interval
-      const clampStart = Math.max(run.startX, day.start);
-      const clampEnd = Math.min(run.endX, day.end);
-      if (clampStart >= clampEnd) continue;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = intervalW;
+    offscreen.height = intervalH;
+    const offCtx = offscreen.getContext('2d');
+    if (!offCtx) continue;
 
-      // Blend at cloud-type transitions strictly inside daylight; hard cut at
-      // sun boundaries and canvas edges. The strict comparison keeps a run
-      // that starts exactly at sunrise from fading out into the night, and
-      // guarantees the neighbouring run is also drawn in this interval.
-      const leftBlend =
-        ri > 0 && run.startX > day.start ? Math.min(blendW, run.startX - day.start) : 0;
-      const rightBlend =
-        ri < runs.length - 1 && run.endX < day.end ? Math.min(blendW, day.end - run.endX) : 0;
+    for (const type of RENDER_ORDER) {
+      const interp = makeCoverageInterpolator(envelopes.get(type) ?? []);
+      const coverageAt = (localX: number): number => interp(localX + day.start);
+      if (sampleCoverageStats(coverageAt, intervalW).max < 0.01) continue;
 
-      const drawStart = clampStart - leftBlend;
-      const drawEnd = clampEnd + rightBlend;
-      const totalW = Math.ceil(drawEnd - drawStart);
-      const totalH = Math.ceil(height);
-
-      const offscreen = document.createElement('canvas');
-      offscreen.width = totalW;
-      offscreen.height = totalH;
-      const offCtx = offscreen.getContext('2d');
-      if (!offCtx) continue;
-
-      // Build coverageAt mapping local offscreen x → interpolated 0–1 coverage
-      const points = run.coveragePoints;
-      const coverageAt = (localX: number): number => {
-        const worldX = localX + drawStart;
-        if (points.length === 1) return points[0].v;
-        if (worldX <= points[0].x) return points[0].v;
-        if (worldX >= points[points.length - 1].x) return points[points.length - 1].v;
-        for (let j = 0; j < points.length - 1; j++) {
-          if (worldX <= points[j + 1].x) {
-            const t = (worldX - points[j].x) / (points[j + 1].x - points[j].x);
-            return points[j].v + t * (points[j + 1].v - points[j].v);
-          }
-        }
-        return points[points.length - 1].v;
-      };
-
-      for (const layer of run.layers) {
-        const rng = createRng(`clouds-${layer}-${run.startX}`);
-        CLOUD_DRAW_FNS[layer](offCtx, totalW, totalH, coverageAt, rng);
-      }
-
-      // Fade left edge for blend with previous run
-      if (leftBlend > 0) {
-        const grad = offCtx.createLinearGradient(0, 0, leftBlend, 0);
-        grad.addColorStop(0, 'rgba(0,0,0,1)');
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        offCtx.globalCompositeOperation = 'destination-out';
-        offCtx.fillStyle = grad;
-        offCtx.fillRect(0, 0, leftBlend, totalH);
-        offCtx.globalCompositeOperation = 'source-over';
-      }
-
-      // Fade right edge for blend with next run
-      if (rightBlend > 0) {
-        const grad = offCtx.createLinearGradient(totalW - rightBlend, 0, totalW, 0);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, 'rgba(0,0,0,1)');
-        offCtx.globalCompositeOperation = 'destination-out';
-        offCtx.fillStyle = grad;
-        offCtx.fillRect(totalW - rightBlend, 0, rightBlend, totalH);
-        offCtx.globalCompositeOperation = 'source-over';
-      }
-
-      ctx.drawImage(offscreen, drawStart, 0);
+      const rng = createRng(`clouds-${type}-${Math.round(day.start)}-${Math.round(day.end)}`);
+      CLOUD_DRAW_FNS[type](offCtx, intervalW, intervalH, coverageAt, rng);
     }
+
+    ctx.drawImage(offscreen, day.start, 0);
   }
 }

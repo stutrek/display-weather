@@ -5,6 +5,8 @@
  * a bright sunlit crown.
  */
 
+import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
+
 // Shadow tone for storm mass — same sky-blue family as cumulus, deepened
 const SHADE = '35, 70, 105';
 
@@ -119,7 +121,8 @@ export function drawCumulonimbus(
   coverageAt: (x: number) => number,
   rng: () => number,
 ): void {
-  const midCov = coverageAt(width / 2);
+  const { mean: meanCov } = sampleCoverageStats(coverageAt, width);
+  const invCdf = makeCoverageInvCdf(coverageAt, width);
 
   const offscreen = document.createElement('canvas');
   offscreen.width = width;
@@ -128,11 +131,13 @@ export function drawCumulonimbus(
   if (!off) return;
 
   // A handful of large storm masses rather than many small clouds
-  const count = Math.max(1, Math.round((width / 150) * (0.4 + midCov * 1.6)));
+  const count = Math.max(1, Math.round((width / 150) * (0.4 + meanCov * 1.6)));
 
   const storms: Array<{ cx: number; baseY: number; cloudW: number }> = [];
   for (let i = 0; i < count; i++) {
-    const cx = ((i + 0.5 + (rng() - 0.5) * 0.9) / count) * width;
+    // Stratified slots with jitter, mapped through the coverage inverse-CDF
+    // so storms land where the envelope has mass (identity at constant cov)
+    const cx = invCdf((i + 0.5 + (rng() - 0.5) * 0.9) / count);
     const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
 
     if (rng() > localCov + 0.5) continue;

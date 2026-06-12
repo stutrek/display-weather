@@ -21,13 +21,13 @@ type DrawFn = (
 
 interface CloudCanvasProps {
   draw: DrawFn;
-  coverage: number;
+  coverageAt: (x: number) => number;
   seed: string;
   width: number;
   height: number;
 }
 
-function CloudCanvas({ draw, coverage, seed, width, height }: CloudCanvasProps) {
+function CloudCanvas({ draw, coverageAt, seed, width, height }: CloudCanvasProps) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -36,8 +36,8 @@ function CloudCanvas({ draw, coverage, seed, width, height }: CloudCanvasProps) 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, width, height);
-    draw(ctx, width, height, () => coverage, createRng(`${seed}-${coverage}`));
-  }, [draw, coverage, seed, width, height]);
+    draw(ctx, width, height, coverageAt, createRng(seed));
+  }, [draw, coverageAt, seed, width, height]);
 
   return <canvas ref={ref} width={width} height={height} style={{ display: 'block' }} />;
 }
@@ -56,7 +56,13 @@ const ALGORITHMS = [
     name: 'Cumulus',
     note: 'Distinct flat-based clouds: puff row with domed envelope, single per-cloud shading gradient.',
     render: (coverage: number, idx: number) => (
-      <CloudCanvas draw={drawCumulus} coverage={coverage} seed={`cc-${idx}`} width={W} height={H} />
+      <CloudCanvas
+        draw={drawCumulus}
+        coverageAt={() => coverage}
+        seed={`cc-${idx}-${coverage}`}
+        width={W}
+        height={H}
+      />
     ),
   },
   {
@@ -65,8 +71,8 @@ const ALGORITHMS = [
     render: (coverage: number, idx: number) => (
       <CloudCanvas
         draw={drawCumulonimbus}
-        coverage={coverage}
-        seed={`cb-${idx}`}
+        coverageAt={() => coverage}
+        seed={`cb-${idx}-${coverage}`}
         width={W}
         height={H}
       />
@@ -76,14 +82,26 @@ const ALGORITHMS = [
     name: 'Stratocumulus',
     note: 'Anisotropic fBm, per-octave grids to avoid tiling, smootherstep edges.',
     render: (coverage: number, _idx: number) => (
-      <CloudCanvas draw={drawStratocumulus} coverage={coverage} seed="vn" width={W} height={H} />
+      <CloudCanvas
+        draw={drawStratocumulus}
+        coverageAt={() => coverage}
+        seed={`vn-${coverage}`}
+        width={W}
+        height={H}
+      />
     ),
   },
   {
     name: 'Cirrus',
     note: 'Canvas radial-gradient ellipses, fixed opacity, strand count scales with coverage.',
     render: (coverage: number, idx: number) => (
-      <CloudCanvas draw={drawCirrus} coverage={coverage} seed={`ci-${idx}`} width={W} height={H} />
+      <CloudCanvas
+        draw={drawCirrus}
+        coverageAt={() => coverage}
+        seed={`ci-${idx}-${coverage}`}
+        width={W}
+        height={H}
+      />
     ),
   },
 ];
@@ -187,6 +205,123 @@ function AlgorithmGrid() {
 }
 
 // ============================================================================
+// Varying coverage grid — regression panel for changing-weather forecasts.
+// Each renderer must read as one continuous field: thickening on the ramp,
+// leaving the dip's middle empty, and appearing briefly at the spike.
+// ============================================================================
+
+const VW = 720;
+
+const ENVELOPES = [
+  {
+    name: 'Ramp 0 → 1',
+    note: 'Coverage climbs left to right; clouds should thicken continuously.',
+    fn: (x: number) => x / VW,
+  },
+  {
+    name: 'Dip',
+    note: 'Full coverage at the edges, zero mid-strip; the gap must stay clear.',
+    fn: (x: number) => Math.min(1, Math.abs(x - VW / 2) / (VW * 0.25)),
+  },
+  {
+    name: 'Spike',
+    note: 'Single-hour triangle peaking at 0.9; one brief, sparse appearance.',
+    fn: (x: number) => Math.max(0, 0.9 * (1 - Math.abs(x - VW / 2) / (VW / 24))),
+  },
+];
+
+const VARYING_ALGORITHMS = [
+  { name: 'Cirrus', draw: drawCirrus },
+  { name: 'Cumulus', draw: drawCumulus },
+  { name: 'Cumulonimbus', draw: drawCumulonimbus },
+];
+
+function VaryingCoverageGrid() {
+  const labelCol = '180px';
+
+  return (
+    <div
+      style={{
+        padding: '2rem',
+        background: '#111827',
+        minHeight: '100vh',
+        boxSizing: 'border-box',
+      }}
+    >
+      <h2
+        style={{
+          fontFamily: 'system-ui, sans-serif',
+          color: '#e5e7eb',
+          marginTop: 0,
+          marginBottom: '0.35rem',
+        }}
+      >
+        Varying Coverage Envelopes
+      </h2>
+      <p
+        style={{
+          fontFamily: 'system-ui, sans-serif',
+          color: '#6b7280',
+          marginTop: 0,
+          marginBottom: '2rem',
+          fontSize: '0.85rem',
+        }}
+      >
+        {VW}×{H}px panels. Coverage varies across each panel — clouds must follow the envelope
+        continuously instead of rendering in blocks.
+      </p>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${labelCol} ${VW}px`,
+          gap: '0.75rem',
+          alignItems: 'center',
+        }}
+      >
+        {VARYING_ALGORITHMS.flatMap((alg) =>
+          ENVELOPES.map((env) => (
+            <Fragment key={`${alg.name}-${env.name}`}>
+              <div style={{ paddingRight: '1rem' }}>
+                <div
+                  style={{
+                    fontFamily: 'system-ui, sans-serif',
+                    fontWeight: 600,
+                    color: '#e5e7eb',
+                    fontSize: '0.82rem',
+                    marginBottom: '0.2rem',
+                  }}
+                >
+                  {alg.name} — {env.name}
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'system-ui, sans-serif',
+                    color: '#6b7280',
+                    fontSize: '0.72rem',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {env.note}
+                </div>
+              </div>
+              <div style={{ background: SKY_BLUE, borderRadius: '8px', overflow: 'hidden' }}>
+                <CloudCanvas
+                  draw={alg.draw}
+                  coverageAt={env.fn}
+                  seed={`vary-${alg.name}-${env.name}`}
+                  width={VW}
+                  height={H}
+                />
+              </div>
+            </Fragment>
+          )),
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Meta & Stories
 // ============================================================================
 
@@ -201,4 +336,9 @@ type Story = StoryObj;
 export const AlgorithmComparison: Story = {
   name: 'Algorithm Comparison',
   render: () => <AlgorithmGrid />,
+};
+
+export const VaryingCoverage: Story = {
+  name: 'Varying Coverage',
+  render: () => <VaryingCoverageGrid />,
 };
