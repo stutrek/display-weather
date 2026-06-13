@@ -75,7 +75,7 @@ export function HourlyChart({
     drawSkyBackground(canvas, forecast, sunTimes);
     applyTemperatureMask(canvas, forecast, pixelsPerDegree);
     drawStars(canvas, forecast, sunTimes);
-    drawClouds(canvas, forecast, sunTimes);
+    drawClouds(canvas, forecast, sunTimes, pixelsPerDegree);
     drawTemperatureLine(canvas, forecast, pixelsPerDegree, getTemperatureColor);
     drawPrecipitation(canvas, forecast); // Drawn last so particles appear on top
   }, [observedWidth, forecast, sunTimes, height, pixelsPerDegree, getTemperatureColor]);

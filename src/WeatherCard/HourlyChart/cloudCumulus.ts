@@ -86,6 +86,7 @@ export function drawCumulus(
   height: number,
   coverageAt: (x: number) => number,
   rng: () => number,
+  floorAt?: (x: number) => number,
 ): void {
   const { mean: meanCov } = sampleCoverageStats(coverageAt, width);
   const invCdf = makeCoverageInvCdf(coverageAt, width);
@@ -98,7 +99,10 @@ export function drawCumulus(
 
   // Fewer, larger clouds — small ones read as dots from across the room.
   // Count scales with width and coverage; cloud size with local coverage.
-  const count = Math.max(2, Math.round((width / 70) * (0.4 + meanCov * 2.4)));
+  // Narrow canvases (a short daylight sliver at dawn/dusk) drop the 2-cloud
+  // minimum — forcing 2 center-clamped clouds into ~40px stacks them into
+  // one oversized blob.
+  const count = Math.max(width >= 160 ? 2 : 1, Math.round((width / 70) * (0.4 + meanCov * 2.4)));
 
   const clouds: Array<{ cx: number; baseY: number; cloudW: number }> = [];
   for (let i = 0; i < count; i++) {
@@ -110,9 +114,25 @@ export function drawCumulus(
     // Thin out clouds in low-coverage regions — controls density, not brightness
     if (rng() > localCov + 0.4) continue;
 
-    const cloudW = Math.min((40 + rng() * 55) * (0.6 + localCov * 0.6), height * 1.1);
-    const baseY = height * (0.4 + rng() * 0.25);
-    clouds.push({ cx, baseY, cloudW });
+    // Cap by canvas width too, so a narrow sliver gets a cloud that fits it
+    let cloudW = Math.min((40 + rng() * 55) * (0.6 + localCov * 0.6), height * 1.1, width * 0.66);
+    const baseRoll = rng();
+    let baseY = height * (0.4 + baseRoll * 0.25);
+    if (floorAt) {
+      // Scatter bases through the visible sky band above the temperature
+      // line — from mid-sky down to slightly tucked behind the line — and
+      // shrink clouds whose dome would no longer fit above the canvas top
+      const floor = floorAt(Math.max(0, Math.min(width - 1, cx)));
+      baseY = floor * (0.5 + baseRoll * 0.6);
+      cloudW = Math.min(cloudW, Math.max(20, baseY * 1.2));
+    }
+
+    // Keep whole clouds inside the canvas: a cloud chopped at an interval
+    // edge (sunrise/sunset) reads as a vertical bar
+    const halfSpan = cloudW * 0.76;
+    const clampedCx =
+      width >= halfSpan * 2 ? Math.max(halfSpan, Math.min(width - halfSpan, cx)) : width / 2;
+    clouds.push({ cx: clampedCx, baseY, cloudW });
   }
 
   // Draw back-to-front: higher (further) clouds first, so lower clouds always

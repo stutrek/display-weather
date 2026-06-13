@@ -494,6 +494,7 @@ const CLOUD_DRAW_FNS: Record<
     h: number,
     coverageAt: (x: number) => number,
     rng: () => number,
+    floorAt?: (x: number) => number,
   ) => void
 > = {
   cumulus: drawCumulus,
@@ -518,6 +519,7 @@ export function drawClouds(
   canvas: HTMLCanvasElement,
   forecast: WeatherForecast[],
   sunTimes: SunTimes,
+  pixelsPerDegree: number,
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx || !forecast || forecast.length === 0) return;
@@ -558,8 +560,21 @@ export function drawClouds(
 
   const dayIntervals = getDaylightIntervals(forecast, sunTimes, width);
 
-  // One render per daylight interval per type, back to front. The hard cut
-  // at sun boundaries comes from sizing the offscreen to the interval.
+  // Sky floor: the temperature line. The temperature area is painted over
+  // the clouds, so renderers that take a floor keep their cloud bases tucked
+  // just below the line with the domes visible above it.
+  const { getTempY } = createTemperaturePositioner(forecast, height, pixelsPerDegree);
+  const tempYs = forecast.map((h) => getTempY(h.temperature ?? 0));
+  const floorAtWorld = (x: number): number => {
+    const fi = (x / width) * (forecast.length - 1);
+    const i = Math.max(0, Math.min(forecast.length - 2, Math.floor(fi)));
+    const t = Math.max(0, Math.min(1, fi - i));
+    return tempYs[i] + t * (tempYs[i + 1] - tempYs[i]);
+  };
+
+  // One render per daylight interval per type, back to front. Clouds cut hard
+  // at the sun boundaries — matching the sky's sharp day/night line — because
+  // the offscreen is sized to the interval. Canvas edges run off-screen.
   for (const day of dayIntervals) {
     const intervalW = Math.ceil(day.end - day.start);
     const intervalH = Math.ceil(height);
@@ -577,7 +592,8 @@ export function drawClouds(
       if (sampleCoverageStats(coverageAt, intervalW).max < 0.01) continue;
 
       const rng = createRng(`clouds-${type}-${Math.round(day.start)}-${Math.round(day.end)}`);
-      CLOUD_DRAW_FNS[type](offCtx, intervalW, intervalH, coverageAt, rng);
+      const floorAt = (localX: number): number => floorAtWorld(localX + day.start);
+      CLOUD_DRAW_FNS[type](offCtx, intervalW, intervalH, coverageAt, rng, floorAt);
     }
 
     ctx.drawImage(offscreen, day.start, 0);

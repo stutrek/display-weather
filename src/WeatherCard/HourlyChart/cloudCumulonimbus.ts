@@ -144,7 +144,13 @@ export function drawCumulonimbus(
 
     const cloudW = Math.min((80 + rng() * 60) * (0.55 + localCov * 0.6), width * 0.5);
     const baseY = height * (0.72 + rng() * 0.18);
-    storms.push({ cx, baseY, cloudW });
+
+    // Keep whole storms inside the canvas: a tower chopped at an interval
+    // edge (sunrise/sunset) reads as a vertical bar
+    const halfSpan = cloudW * 0.67;
+    const clampedCx =
+      width >= halfSpan * 2 ? Math.max(halfSpan, Math.min(width - halfSpan, cx)) : width / 2;
+    storms.push({ cx: clampedCx, baseY, cloudW });
   }
 
   // Draw back-to-front: higher (further) storms first
