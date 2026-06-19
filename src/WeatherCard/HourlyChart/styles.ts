@@ -67,6 +67,7 @@ export const hourlyChartStyles = css`
   font-weight: 600;
   text-shadow: 0 0 0.2em var(--card-background-color, rgba(255,255,255,0.8)), 0 0 0.4em var(--card-background-color, rgba(255,255,255,0.6));
   white-space: nowrap;
+  /* Centred on the temperature line so the number sits on the horizon. */
   transform: translate(-50%, -50%);
 }
 

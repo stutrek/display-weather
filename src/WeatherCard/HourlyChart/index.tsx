@@ -263,6 +263,8 @@ export function HourlyChart({
                     className="hourly-temp-label"
                     style={{
                       left: `${xPercent}%`,
+                      // Centred on the temperature line so the number sits on
+                      // the horizon ridge.
                       top: `${lineY}px`,
                     }}
                   >

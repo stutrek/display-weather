@@ -3,26 +3,53 @@
 // Functions for mapping temperatures to colors
 // ============================================================================
 
-// Color stops for temperature visualization (0°F to 104°F)
-const TEMP_COLOR_STOPS = [
-  { temp: 0, color: '#6666cc' }, // Deep purple
-  { temp: 10, color: '#8888ff' }, // Freezing purple
-  { temp: 20, color: '#6677ff' }, // Ice blue
-  { temp: 30, color: '#66aaff' }, // Cold blue
-  { temp: 40, color: '#44bbff' }, // Cool blue
-  { temp: 50, color: '#66cc99' }, // Cool green
-  { temp: 60, color: '#88dd88' }, // Mild green
-  { temp: 70, color: '#ffee44' }, // Warm yellow
-  { temp: 80, color: '#ffbb44' }, // Mild orange
-  { temp: 90, color: '#ff8844' }, // Warm orange
-  { temp: 100, color: '#ff4444' }, // Hot red
-  { temp: 104, color: '#cc0000' }, // Deep red
+export type TemperatureUnit = '°F' | '°C';
+export type TemperaturePalette = 'ember' | 'mutedThermal';
+
+type ColorStop = { temp: number; color: string };
+
+// Ember — earthy "biome" story: the colour of the land at that temperature.
+// frost → cold teal → sage → green → wheat → amber → terracotta → ember. The
+// cold end is kept off the sky's blue (only the freezing extreme is a pale
+// frost) so the ground doesn't blend into the sky; the hot end glows rather
+// than muddying to brown, so it stays legible on a dark night sky.
+const EMBER_STOPS: ColorStop[] = [
+  { temp: 0, color: '#cfe0e2' }, // pale frost
+  { temp: 20, color: '#9bbdb8' }, // frosty steel-teal
+  { temp: 34, color: '#74a692' }, // cold teal
+  { temp: 52, color: '#5fa177' }, // sage
+  { temp: 68, color: '#4fa657' }, // fresh green — prime comfortable weather
+  { temp: 76, color: '#a4a740' }, // straw, drying
+  { temp: 84, color: '#c6a23a' }, // golden wheat
+  { temp: 91, color: '#c8812f' }, // amber
+  { temp: 98, color: '#b25030' }, // terracotta
+  { temp: 104, color: '#99301f' }, // ember
 ];
 
-const PALETTE_MIN = TEMP_COLOR_STOPS[0].temp;
-const PALETTE_MAX = TEMP_COLOR_STOPS[TEMP_COLOR_STOPS.length - 1].temp;
+// Muted thermal — the familiar cold→warm heatmap ordering, just desaturated and
+// dusty rather than primary/saturated. Keeps the mental model everyone reads.
+const MUTED_THERMAL_STOPS: ColorStop[] = [
+  { temp: 0, color: '#5a5eac' }, // dusty indigo
+  { temp: 20, color: '#5d8ac0' }, // cold blue
+  { temp: 40, color: '#61a3bd' }, // cool blue
+  { temp: 55, color: '#63a98c' }, // cool green
+  { temp: 68, color: '#7eae5e' }, // mild green
+  { temp: 78, color: '#c5b65f' }, // warm wheat
+  { temp: 88, color: '#c2904f' }, // mild amber
+  { temp: 98, color: '#b86545' }, // warm clay
+  { temp: 104, color: '#a8473a' }, // dusty red
+];
 
-export type TemperatureUnit = '°F' | '°C';
+const PALETTES: Record<TemperaturePalette, ColorStop[]> = {
+  ember: EMBER_STOPS,
+  mutedThermal: MUTED_THERMAL_STOPS,
+};
+
+export const DEFAULT_TEMPERATURE_PALETTE: TemperaturePalette = 'ember';
+
+// Every palette shares the same 0–104°F domain, so the clamp bounds are shared.
+const PALETTE_MIN = EMBER_STOPS[0].temp;
+const PALETTE_MAX = EMBER_STOPS[EMBER_STOPS.length - 1].temp;
 
 function celsiusToFahrenheit(c: number): number {
   return (c * 9) / 5 + 32;
@@ -51,33 +78,90 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
 }
 
+// --- OKLab / OKLCH (Björn Ottosson). Perceptually-uniform colour space: equal
+// numeric steps look like equal visual steps, so interpolating here avoids both
+// the muddy midpoints of sRGB and the lightness spikes of HSL. ---
+
+function srgbToLinear(c: number): number {
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function linearToSrgb(c: number): number {
+  return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+}
+
+function rgbToOklch({ r, g, b }: { r: number; g: number; b: number }): {
+  L: number;
+  C: number;
+  h: number;
+} {
+  const lr = srgbToLinear(r / 255);
+  const lg = srgbToLinear(g / 255);
+  const lb = srgbToLinear(b / 255);
+  const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+  const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+  const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+  const L = 0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_;
+  const a = 1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_;
+  const bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.808675766 * s_;
+  return { L, C: Math.hypot(a, bb), h: (Math.atan2(bb, a) * 180) / Math.PI };
+}
+
+function oklchToRgb(L: number, C: number, h: number): { r: number; g: number; b: number } {
+  const hr = (h * Math.PI) / 180;
+  const a = C * Math.cos(hr);
+  const bb = C * Math.sin(hr);
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * bb;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * bb;
+  const s_ = L - 0.0894841775 * a - 1.291485548 * bb;
+  const l = l_ ** 3;
+  const m = m_ ** 3;
+  const s = s_ ** 3;
+  const lr = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+  const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+  const lb = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+  const ch = (v: number) => Math.max(0, Math.min(255, Math.round(linearToSrgb(v) * 255)));
+  return { r: ch(lr), g: ch(lg), b: ch(lb) };
+}
+
+/**
+ * Interpolate between two hex colours in OKLCH, rotating hue along the shortest
+ * arc. Because the space is perceptually uniform, wide-hue ramps (green → gold)
+ * change at a constant visual rate — no muddy sRGB midpoint, no HSL lightness
+ * spike — so they read as smooth gradients instead of hard bands.
+ */
 function interpolateColor(color1: string, color2: string, factor: number): string {
-  const c1 = hexToRgb(color1);
-  const c2 = hexToRgb(color2);
-
-  const r = Math.round(c1.r + (c2.r - c1.r) * factor);
-  const g = Math.round(c1.g + (c2.g - c1.g) * factor);
-  const b = Math.round(c1.b + (c2.b - c1.b) * factor);
-
-  return rgbToHex(r, g, b);
+  const a = rgbToOklch(hexToRgb(color1));
+  const b = rgbToOklch(hexToRgb(color2));
+  let dh = b.h - a.h;
+  if (dh > 180) dh -= 360;
+  if (dh < -180) dh += 360;
+  const L = a.L + (b.L - a.L) * factor;
+  const C = a.C + (b.C - a.C) * factor;
+  const h = a.h + dh * factor;
+  const { r, g, b: bl } = oklchToRgb(L, C, h);
+  return rgbToHex(r, g, bl);
 }
 
 /**
  * Get color for a palette temperature (internal helper)
  */
-function getColorForPaletteTemp(paletteTemp: number): string {
+function getColorForPaletteTemp(paletteTemp: number, stops: ColorStop[]): string {
   // Clamp to palette bounds
   if (paletteTemp <= PALETTE_MIN) {
-    return TEMP_COLOR_STOPS[0].color;
+    return stops[0].color;
   }
   if (paletteTemp >= PALETTE_MAX) {
-    return TEMP_COLOR_STOPS[TEMP_COLOR_STOPS.length - 1].color;
+    return stops[stops.length - 1].color;
   }
 
   // Find the two color stops to interpolate between
-  for (let i = 0; i < TEMP_COLOR_STOPS.length - 1; i++) {
-    const lower = TEMP_COLOR_STOPS[i];
-    const upper = TEMP_COLOR_STOPS[i + 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const lower = stops[i];
+    const upper = stops[i + 1];
 
     if (paletteTemp >= lower.temp && paletteTemp <= upper.temp) {
       const factor = (paletteTemp - lower.temp) / (upper.temp - lower.temp);
@@ -85,7 +169,7 @@ function getColorForPaletteTemp(paletteTemp: number): string {
     }
   }
 
-  return TEMP_COLOR_STOPS[0].color;
+  return stops[0].color;
 }
 
 // ============================================================================
@@ -97,8 +181,12 @@ function getColorForPaletteTemp(paletteTemp: number): string {
  * Uses smooth interpolation between key temperature points
  * @deprecated Use createAdaptiveTemperatureColorFn for better color differentiation
  */
-export function getTemperatureColor(temp: number, unit: TemperatureUnit = '°F'): string {
-  return getColorForPaletteTemp(toPaletteTemp(temp, unit));
+export function getTemperatureColor(
+  temp: number,
+  unit: TemperatureUnit = '°F',
+  palette: TemperaturePalette = DEFAULT_TEMPERATURE_PALETTE,
+): string {
+  return getColorForPaletteTemp(toPaletteTemp(temp, unit), PALETTES[palette]);
 }
 
 /**
@@ -117,15 +205,22 @@ export function getTemperatureColor(temp: number, unit: TemperatureUnit = '°F')
  *
  * @param minTemp - Minimum temperature in the forecast
  * @param maxTemp - Maximum temperature in the forecast
- * @param padding - Degrees to expand color range on each side (default 10°F)
+ * @param padding - Degrees to expand the color range past the forecast. A
+ *   number pads both sides equally; `{low, high}` pads the cool and warm ends
+ *   separately (e.g. expand cool more than warm).
  * @returns A function that maps temperature to color
  */
 export function createAdaptiveTemperatureColorFn(
   minTemp: number,
   maxTemp: number,
-  padding = 10,
+  padding: number | { low: number; high: number } = 10,
   unit: TemperatureUnit = '°F',
+  palette: TemperaturePalette = DEFAULT_TEMPERATURE_PALETTE,
 ): (temp: number) => string {
+  const stops = PALETTES[palette];
+  const padLow = typeof padding === 'number' ? padding : padding.low;
+  const padHigh = typeof padding === 'number' ? padding : padding.high;
+
   // Convert caller's range to palette units (°F) once.
   // The closure also converts each incoming temp below.
   const minPalette = toPaletteTemp(minTemp, unit);
@@ -133,8 +228,8 @@ export function createAdaptiveTemperatureColorFn(
   const tempRange = maxPalette - minPalette;
 
   // Desired color range with padding (palette degrees)
-  let colorRangeStart = minPalette - padding;
-  let colorRangeEnd = maxPalette + padding;
+  let colorRangeStart = minPalette - padLow;
+  let colorRangeEnd = maxPalette + padHigh;
   const colorRangeSize = colorRangeEnd - colorRangeStart;
 
   // Clamp to palette bounds, shifting if necessary
@@ -167,6 +262,6 @@ export function createAdaptiveTemperatureColorFn(
     // Map to clamped color range
     const paletteTemp = colorRangeStart + normalizedPosition * actualColorRange;
 
-    return getColorForPaletteTemp(paletteTemp);
+    return getColorForPaletteTemp(paletteTemp, stops);
   };
 }

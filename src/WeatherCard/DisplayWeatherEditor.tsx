@@ -49,6 +49,18 @@ const SCHEMA = [
       },
     },
   },
+  {
+    name: 'temperaturePalette',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: [
+          { value: 'ember', label: 'Ember (earthy)' },
+          { value: 'mutedThermal', label: 'Muted thermal' },
+        ],
+      },
+    },
+  },
 ] as const;
 
 // Rendered outside ha-form so the three switches stack flush together
@@ -65,10 +77,12 @@ const LABELS: Record<string, string> = {
   forecast_entity: 'Forecast Source (optional)',
   size: 'Size',
   hourlyHours: 'Hourly forecast hours',
+  temperaturePalette: 'Temperature colors',
 };
 
 const HELPER_TEXT: Record<string, string> = {
   forecast_entity: 'Use a different entity for forecasts. Leave empty to use the same entity.',
+  temperaturePalette: 'Color scheme for the temperature bar.',
 };
 
 function WeatherEditorContent({ hass, config, onConfigChanged }: EditorProps) {

@@ -10,6 +10,8 @@ import {
 } from 'preact-homeassistant';
 import { useContext, useMemo } from 'preact/hooks';
 import {
+  DEFAULT_TEMPERATURE_PALETTE,
+  type TemperaturePalette,
   type TemperatureUnit,
   createAdaptiveTemperatureColorFn,
   getTemperatureColor as getFixedTemperatureColor,
@@ -29,6 +31,8 @@ export interface WeatherConfig {
   showHourly?: boolean;
   showDaily?: boolean;
   hourlyHours?: 12 | 18 | 24;
+  /** Colour scheme for the temperature bar. Defaults to 'ember'. */
+  temperaturePalette?: TemperaturePalette;
 }
 
 export interface SunTimes {
@@ -181,6 +185,7 @@ export function WeatherProvider({
   }, [rawDailyForecast]);
 
   // Create adaptive temperature color function based on all forecast data
+  const palette = config.temperaturePalette ?? DEFAULT_TEMPERATURE_PALETTE;
   const getTemperatureColor = useMemo(() => {
     // Collect all temperatures from hourly and daily forecasts
     const allTemps: number[] = [];
@@ -200,16 +205,23 @@ export function WeatherProvider({
 
     // If no temperature data, use fixed color function
     if (allTemps.length === 0) {
-      return (t: number) => getFixedTemperatureColor(t, temperatureUnit);
+      return (t: number) => getFixedTemperatureColor(t, temperatureUnit, palette);
     }
 
     const minTemp = Math.min(...allTemps);
     const maxTemp = Math.max(...allTemps);
 
-    // Create adaptive function - 12 palette-degrees (°F) padding on each side.
-    // Inputs are converted from `temperatureUnit` to °F inside the color fn.
-    return createAdaptiveTemperatureColorFn(minTemp, maxTemp, 12, temperatureUnit);
-  }, [hourlyForecast, dailyForecast, temperatureUnit]);
+    // Create adaptive function with asymmetric padding (palette °F): expand the
+    // cool end more than the warm end, so warm forecasts don't overshoot into
+    // amber/scorched colours. Inputs are converted to °F inside the color fn.
+    return createAdaptiveTemperatureColorFn(
+      minTemp,
+      maxTemp,
+      { low: 12, high: 4 },
+      temperatureUnit,
+      palette,
+    );
+  }, [hourlyForecast, dailyForecast, temperatureUnit, palette]);
 
   const value = useMemo<WeatherContextValue>(() => {
     return {

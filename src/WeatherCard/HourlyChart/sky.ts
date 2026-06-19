@@ -5,7 +5,7 @@
 
 import type { SunTimes, WeatherForecast } from '../WeatherContext';
 import { blurCanvasInPlace, supportsNativeBlur } from './blur';
-import { createTemperaturePositioner } from './canvasHelpers';
+import { appendSmoothCurve, createTemperaturePositioner } from './canvasHelpers';
 import { drawCirrus } from './cloudCirrus';
 import { drawCumulonimbus } from './cloudCumulonimbus';
 import { drawCumulus } from './cloudCumulus';
@@ -353,22 +353,21 @@ export function applyTemperatureMask(
   if (!shapeCtx) return;
   // Don't scale - draw directly in physical pixel coordinates
 
+  // Follow the temperature line as a smooth curve through the same ridge points
+  // the terrain uses, so the sky-fade edge coincides with the terrain top
+  // instead of fading along a straight chord near peaks and valleys.
+  const maskPts = forecast.map((hour, index) => {
+    let x = (getHourX(index) + MASK_BLUR_RADIUS) * dpr;
+    if (index === 0) x -= MASK_BLUR_RADIUS * dpr;
+    if (index === forecast.length - 1) x += MASK_BLUR_RADIUS * dpr;
+    return { x, y: getTempY(hour.temperature ?? 0) * dpr };
+  });
+
   // Draw the temperature fill shape (area from temp line to bottom)
   shapeCtx.beginPath();
   shapeCtx.moveTo(0, height * dpr); // Start at bottom-left (physical pixels)
-
-  // Follow temperature line
-  forecast.forEach((hour, index) => {
-    let x = (getHourX(index) + MASK_BLUR_RADIUS) * dpr;
-    const y = getTempY(hour.temperature ?? 0) * dpr;
-    if (index === 0) {
-      x -= MASK_BLUR_RADIUS * dpr;
-    }
-    if (index === forecast.length - 1) {
-      x += MASK_BLUR_RADIUS * dpr;
-    }
-    shapeCtx.lineTo(x, y);
-  });
+  shapeCtx.lineTo(maskPts[0].x, maskPts[0].y);
+  appendSmoothCurve(shapeCtx, maskPts);
 
   // Complete the shape to bottom-right (using full extended width) and back
   shapeCtx.lineTo(shapeWidth, height * dpr);

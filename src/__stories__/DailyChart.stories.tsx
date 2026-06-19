@@ -27,7 +27,8 @@ function createColorFnForDaily(data: WeatherForecast[]) {
   });
   const min = Math.min(...temps);
   const max = Math.max(...temps);
-  return createAdaptiveTemperatureColorFn(min, max, 10);
+  // Match WeatherContext: asymmetric padding (cool end expands more than warm).
+  return createAdaptiveTemperatureColorFn(min, max, { low: 12, high: 4 });
 }
 
 // ============================================================================
