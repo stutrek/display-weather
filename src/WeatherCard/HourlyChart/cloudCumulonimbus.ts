@@ -142,7 +142,7 @@ export function drawCumulonimbus(
 
     if (rng() > localCov + 0.5) continue;
 
-    const cloudW = Math.min((80 + rng() * 60) * (0.55 + localCov * 0.6), width * 0.5);
+    const cloudW = Math.min((110 + rng() * 82) * (0.55 + localCov * 0.6), width * 0.64);
     const baseY = height * (0.72 + rng() * 0.18);
 
     // Keep whole storms inside the canvas: a tower chopped at an interval

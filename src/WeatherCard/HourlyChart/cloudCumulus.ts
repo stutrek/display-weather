@@ -115,7 +115,7 @@ export function drawCumulus(
     if (rng() > localCov + 0.4) continue;
 
     // Cap by canvas width too, so a narrow sliver gets a cloud that fits it
-    let cloudW = Math.min((40 + rng() * 55) * (0.6 + localCov * 0.6), height * 1.1, width * 0.66);
+    let cloudW = Math.min((56 + rng() * 72) * (0.6 + localCov * 0.6), height * 1.35, width * 0.72);
     const baseRoll = rng();
     let baseY = height * (0.4 + baseRoll * 0.25);
     if (floorAt) {
@@ -124,7 +124,9 @@ export function drawCumulus(
       // shrink clouds whose dome would no longer fit above the canvas top
       const floor = floorAt(Math.max(0, Math.min(width - 1, cx)));
       baseY = floor * (0.5 + baseRoll * 0.6);
-      cloudW = Math.min(cloudW, Math.max(20, baseY * 1.2));
+      // Shrink only when space is truly tight — let domes ride high and clip
+      // slightly at the canvas top rather than shrinking with the mound
+      cloudW = Math.min(cloudW, Math.max(20, baseY * 2.1));
     }
 
     // Keep whole clouds inside the canvas: a cloud chopped at an interval
