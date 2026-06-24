@@ -104,6 +104,42 @@ export function drawCumulus(
   // one oversized blob.
   const count = Math.max(width >= 160 ? 2 : 1, Math.round((width / 70) * (0.4 + meanCov * 2.4)));
 
+  // Size and place a single cloud centred near cx. Factored out so the
+  // guaranteed-cloud fallback below takes the exact same path as the loop.
+  const buildCloudAt = (cx: number): { cx: number; baseY: number; cloudW: number } => {
+    const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
+    // Size from the fixed canvas height, never the width: the chart height is
+    // constant while width changes, so a height-driven cloud looks identical
+    // whether the card is narrow or wide. The old base size was gated by
+    // `width * 0.72` (right on narrow charts) but by `height * 1.35` on wide
+    // ones, so clouds ballooned as the card widened.
+    let cloudW = height * (0.8 + localCov * 0.45) * (0.85 + rng() * 0.3);
+    const baseRoll = rng();
+    let baseY = height * (0.4 + baseRoll * 0.25);
+    if (floorAt) {
+      // Scatter bases through the sky band above the temperature line. Capped
+      // below 1.0× the floor so the flat base always stays above the horizon —
+      // higher rolls used to push baseY past the line (up to 1.1×), dropping
+      // the cloud down behind the terrain.
+      const floor = floorAt(Math.max(0, Math.min(width - 1, cx)));
+      baseY = floor * (0.4 + baseRoll * 0.5);
+      // Shrink only when space is truly tight — let domes ride high and clip
+      // slightly at the canvas top rather than shrinking with the mound
+      cloudW = Math.min(cloudW, Math.max(20, baseY * 2.1));
+    }
+
+    // Clamp only so a cloud can't overflow a narrow daylight sliver
+    // (sunrise/sunset); on normal widths this never binds.
+    cloudW = Math.min(cloudW, width * 0.72);
+
+    // Keep whole clouds inside the canvas: a cloud chopped at an interval
+    // edge (sunrise/sunset) reads as a vertical bar
+    const halfSpan = cloudW * 0.76;
+    const clampedCx =
+      width >= halfSpan * 2 ? Math.max(halfSpan, Math.min(width - halfSpan, cx)) : width / 2;
+    return { cx: clampedCx, baseY, cloudW };
+  };
+
   const clouds: Array<{ cx: number; baseY: number; cloudW: number }> = [];
   for (let i = 0; i < count; i++) {
     // Stratified slots with jitter, mapped through the coverage inverse-CDF
@@ -114,27 +150,15 @@ export function drawCumulus(
     // Thin out clouds in low-coverage regions — controls density, not brightness
     if (rng() > localCov + 0.4) continue;
 
-    // Cap by canvas width too, so a narrow sliver gets a cloud that fits it
-    let cloudW = Math.min((56 + rng() * 72) * (0.6 + localCov * 0.6), height * 1.35, width * 0.72);
-    const baseRoll = rng();
-    let baseY = height * (0.4 + baseRoll * 0.25);
-    if (floorAt) {
-      // Scatter bases through the visible sky band above the temperature
-      // line — from mid-sky down to slightly tucked behind the line — and
-      // shrink clouds whose dome would no longer fit above the canvas top
-      const floor = floorAt(Math.max(0, Math.min(width - 1, cx)));
-      baseY = floor * (0.5 + baseRoll * 0.6);
-      // Shrink only when space is truly tight — let domes ride high and clip
-      // slightly at the canvas top rather than shrinking with the mound
-      cloudW = Math.min(cloudW, Math.max(20, baseY * 2.1));
-    }
+    clouds.push(buildCloudAt(cx));
+  }
 
-    // Keep whole clouds inside the canvas: a cloud chopped at an interval
-    // edge (sunrise/sunset) reads as a vertical bar
-    const halfSpan = cloudW * 0.76;
-    const clampedCx =
-      width >= halfSpan * 2 ? Math.max(halfSpan, Math.min(width - halfSpan, cx)) : width / 2;
-    clouds.push({ cx: clampedCx, baseY, cloudW });
+  // The caller only invokes this renderer when coverage is non-trivial, so the
+  // cumulus layer must never end up empty. A low cloud count plus unlucky
+  // thinning rolls can drop every cloud — which read as clouds vanishing
+  // entirely while resizing. Guarantee one at the coverage centroid.
+  if (clouds.length === 0) {
+    clouds.push(buildCloudAt(invCdf(0.5)));
   }
 
   // Draw back-to-front: higher (further) clouds first, so lower clouds always

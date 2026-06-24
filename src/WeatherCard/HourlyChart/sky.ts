@@ -574,7 +574,8 @@ export function drawClouds(
   // One render per daylight interval per type, back to front. Clouds cut hard
   // at the sun boundaries — matching the sky's sharp day/night line — because
   // the offscreen is sized to the interval. Canvas edges run off-screen.
-  for (const day of dayIntervals) {
+  for (let di = 0; di < dayIntervals.length; di++) {
+    const day = dayIntervals[di];
     const intervalW = Math.ceil(day.end - day.start);
     const intervalH = Math.ceil(height);
     if (intervalW <= 0) continue;
@@ -590,7 +591,12 @@ export function drawClouds(
       const coverageAt = (localX: number): number => interp(localX + day.start);
       if (sampleCoverageStats(coverageAt, intervalW).max < 0.01) continue;
 
-      const rng = createRng(`clouds-${type}-${Math.round(day.start)}-${Math.round(day.end)}`);
+      // Seed by the interval's ordinal, not its pixel bounds: a full-day
+      // interval has day.end === width, so a width-based seed re-randomised
+      // the entire cloud field on every pixel of a resize (clouds visibly
+      // popping in and out). The ordinal is width-independent, so resizing
+      // now just rescales the same clouds.
+      const rng = createRng(`clouds-${type}-${di}`);
       const floorAt = (localX: number): number => floorAtWorld(localX + day.start);
       CLOUD_DRAW_FNS[type](offCtx, intervalW, intervalH, coverageAt, rng, floorAt);
     }
