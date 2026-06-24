@@ -46,8 +46,8 @@ function getParticleCount(precipitation: number, segmentArea: number, isSnow: bo
     const snowMultiplier = 60;
     return Math.max(1, Math.round(precipitation * snowMultiplier * areaFactor));
   }
-  // Rain: 0.1" = 3-5, 3" = 30-50
-  const rainMultiplier = 15;
+  // Rain: denser curtain of thin streaks
+  const rainMultiplier = 30;
   return Math.max(1, Math.round(precipitation * rainMultiplier * areaFactor));
 }
 
@@ -71,48 +71,75 @@ function drawEmoji(
 }
 
 /**
- * Convert wind bearing (meteorological degrees, 0=N, 90=E) and speed to a
- * horizontal lean offset per unit of vertical drop.
+ * Horizontal lean offset per unit of vertical drop, based on wind speed alone.
  *
- * Wind bearing describes where the wind is coming FROM, so a 270° (westerly)
- * wind blows eastward → streaks lean right (positive dx).
- * Lean is capped at ±0.7 so streaks never go fully horizontal.
+ * Rain always leans the same way (left→right): wind bearing carries no legible
+ * meaning at this scale, so we drop direction entirely and use speed only. A
+ * gentle non-zero baseline keeps calm-air rain from looking pasted-on vertical;
+ * lean grows with speed toward a 0.7 cap so streaks never go fully horizontal.
  */
-function windLean(bearing: number | undefined, speed: number | undefined): number {
-  if (bearing === undefined || speed === undefined || speed === 0) return 0.25;
-  // Convert: wind FROM bearing → wind blows TO bearing+180
-  const toRad = ((bearing + 180) % 360) * (Math.PI / 180);
-  // East component of wind direction (positive = rightward lean)
-  const eastComponent = Math.sin(toRad);
-  // Scale by speed — clamp lean between -0.7 and 0.7
-  const lean = eastComponent * Math.min(speed / 30, 1) * 0.7;
-  return Math.max(-0.7, Math.min(0.7, lean));
+function windLean(speed: number | undefined): number {
+  const base = 0.15;
+  if (!speed) return base;
+  return base + Math.min(speed / 30, 1) * (0.7 - base);
 }
 
 /**
- * Draw rain streaks as diagonal lines for a set of points.
- * All streaks for a segment are batched into a single stroke call.
+ * Draw rain as falling drops for a set of points.
+ *
+ * Each drop is rendered individually so it can carry depth and motion:
+ * - A per-drop `depth` (0 = far, 1 = near) drives length, width and opacity, so
+ *   the curtain reads with real front-to-back depth instead of a flat sheet.
+ * - An along-streak gradient fades the tail (top) to transparent and keeps the
+ *   leading drop (bottom) bright — the "comet" motion-blur of a falling drop.
+ * - Near drops get a small bright head at the leading edge for sparkle.
+ *
+ * The lean is shared across every drop in the segment (no per-drop jitter, which
+ * would read as chaos). `intensity` (0..1) scales length and width so heavier
+ * precipitation reads heavier per drop, not just denser.
  */
 function drawRainStreaks(
   ctx: CanvasRenderingContext2D,
   points: { x: number; y: number }[],
   rng: () => number,
   lean: number,
+  intensity: number,
 ): void {
   ctx.save();
-  ctx.strokeStyle = 'rgba(180, 220, 255, 1)';
-  ctx.lineWidth = 2;
   ctx.lineCap = 'round';
 
-  ctx.beginPath();
-  for (const point of points) {
-    const length = 20 + rng() * 8; // 12–20px
+  // Per-drop depth, so we can draw far drops first and near drops on top.
+  const drops = points.map((point) => ({ point, depth: rng() })).sort((a, b) => a.depth - b.depth);
+
+  const lenScale = 0.85 + 0.3 * intensity;
+  const widthScale = 0.9 + 0.3 * intensity;
+
+  for (const { point, depth } of drops) {
+    // Far → near: longer, wider, more opaque.
+    const length = (14 + depth * 16) * lenScale * (0.9 + rng() * 0.2);
+    const width = (0.6 + depth * 1.0) * widthScale;
+    const opacity = 0.35 + depth * 0.6;
+
     const dy = length / Math.sqrt(1 + lean * lean);
     const dx = lean * dy;
+    const x2 = point.x + dx;
+    const y2 = point.y + dy;
+
+    // Gradient runs tail (start) → leading drop (end): the streak stays mostly
+    // solid blue, fading only gently toward the tail so it reads as a falling
+    // line rather than a comet.
+    const grad = ctx.createLinearGradient(point.x, point.y, x2, y2);
+    grad.addColorStop(0, `rgba(110, 175, 255, ${opacity * 0.4})`);
+    grad.addColorStop(0.5, `rgba(120, 185, 255, ${opacity * 0.8})`);
+    grad.addColorStop(1, `rgba(140, 200, 255, ${opacity})`);
+
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = width;
+    ctx.beginPath();
     ctx.moveTo(point.x, point.y);
-    ctx.lineTo(point.x + dx, point.y + dy);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
   }
-  ctx.stroke();
   ctx.restore();
 }
 
@@ -167,19 +194,22 @@ export function drawPrecipitation(canvas: HTMLCanvasElement, forecast: WeatherFo
     const minDistance = Math.max(8, Math.min(20, calculatedDistance));
     const points = generatePoints(particleCount, segmentBounds, minDistance, 30, rng);
 
-    const lean = windLean(hour.wind_bearing, hour.wind_speed);
+    const lean = windLean(hour.wind_speed);
+    // Normalized 0..1 heaviness; ~2"/hr saturates. Makes each drop read heavier
+    // (longer/wider), independent of how many drops getParticleCount produced.
+    const intensity = Math.min(precipitation / 2, 1);
 
     if (isRain && isSnow) {
       // Mixed: rain streaks for half, snowflakes for the other half
       const rainPoints = points.filter(() => rng() < 0.5);
       const snowPoints = points.filter((p) => !rainPoints.includes(p));
-      drawRainStreaks(ctx, rainPoints, rng, lean);
+      drawRainStreaks(ctx, rainPoints, rng, lean, intensity);
       snowPoints.forEach((point) => drawEmoji(ctx, '❄️', point.x, point.y, 10));
     } else if (isSnow) {
       points.forEach((point) => drawEmoji(ctx, '❄️', point.x, point.y, 10));
     } else {
       // Pure rain: diagonal streaks
-      drawRainStreaks(ctx, points, rng, lean);
+      drawRainStreaks(ctx, points, rng, lean, intensity);
     }
   });
 }
