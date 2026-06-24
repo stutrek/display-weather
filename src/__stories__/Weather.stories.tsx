@@ -163,6 +163,7 @@ interface WeatherWidgetProps {
   sunTimes?: SunTimes;
   latitude?: number;
   fontSize?: FontSize;
+  cardWidth?: number;
 }
 
 function WeatherWidget({
@@ -173,6 +174,7 @@ function WeatherWidget({
   sunTimes = defaultSunTimes,
   latitude = 40,
   fontSize = 'medium',
+  cardWidth = 400,
 }: WeatherWidgetProps) {
   const mergedConfig = { ...config, size: fontSize };
 
@@ -186,7 +188,7 @@ function WeatherWidget({
       latitude={latitude}
     >
       <style>{getAllStyles()}</style>
-      <ha-card class={`size-${fontSize}`} style={{ width: '400px' }}>
+      <ha-card class={`size-${fontSize}`} style={{ width: `${cardWidth}px` }}>
         <div class="card-content weather-card">
           <WeatherDisplay />
         </div>
@@ -965,5 +967,21 @@ export const RealData: Story = {
     hourlyForecast: realHourly,
     dailyForecast: realDaily,
     fontSize: 'medium',
+  },
+};
+
+// ============================================================================
+// Compressed / Half-Width
+// ============================================================================
+
+export const HalfWidth: Story = {
+  name: 'Compressed - Half Width',
+  args: {
+    config: { ...config, showHourly: false, showDaily: false },
+    entity: weatherEntity as unknown as WeatherEntity,
+    hourlyForecast: generateDefaultHourlyForecast(),
+    dailyForecast: generateDailyForecast(),
+    fontSize: 'medium',
+    cardWidth: 200,
   },
 };

@@ -6,6 +6,7 @@ export const weatherCardStyles = css`
 }
 
 .weather-card {
+  container-type: inline-size;
   color: var(--primary-text-color, #fff);
   font-family: system-ui, -apple-system, sans-serif;
   padding: 0.5em 1em 0.5em;
@@ -244,6 +245,23 @@ ha-card.size-large {
   .daily-chart * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* Compressed / half-width: stack left and right sections */
+@container (max-width: 240px) {
+  .weather-header {
+    flex-direction: column;
+    gap: 0.5em;
+    padding-bottom: 0.5em;
+  }
+
+  .weather-time-section {
+    align-items: flex-start;
+  }
+
+  .weather-detail-group {
+    justify-content: flex-start;
   }
 }
 `;
