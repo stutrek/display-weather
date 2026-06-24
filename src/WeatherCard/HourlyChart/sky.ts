@@ -497,7 +497,7 @@ const CLOUD_DRAW_FNS: Record<
   ) => void
 > = {
   cumulus: drawCumulus,
-  stratocumulus: drawCirrus,
+  stratocumulus: drawStratocumulus,
   stratus: drawCirrus,
   cirrus: drawCirrus,
   cumulonimbus: drawCumulonimbus,

@@ -80,7 +80,7 @@ const ALGORITHMS = [
   },
   {
     name: 'Stratocumulus',
-    note: 'Anisotropic fBm, per-octave grids to avoid tiling, smootherstep edges.',
+    note: 'Dappled field of many small puffs on a jittered grid; coverage fattens them from sparse dapple to thin-cracked sheet.',
     render: (coverage: number, _idx: number) => (
       <CloudCanvas
         draw={drawStratocumulus}
@@ -232,6 +232,7 @@ const ENVELOPES = [
 
 const VARYING_ALGORITHMS = [
   { name: 'Cirrus', draw: drawCirrus },
+  { name: 'Stratocumulus', draw: drawStratocumulus },
   { name: 'Cumulus', draw: drawCumulus },
   { name: 'Cumulonimbus', draw: drawCumulonimbus },
 ];
