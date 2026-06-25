@@ -5,6 +5,7 @@ import { drawCirrus } from '../WeatherCard/HourlyChart/cloudCirrus';
 import { drawCumulonimbus } from '../WeatherCard/HourlyChart/cloudCumulonimbus';
 import { drawCumulus } from '../WeatherCard/HourlyChart/cloudCumulus';
 import { drawStratocumulus } from '../WeatherCard/HourlyChart/cloudStratocumulus';
+import { drawStratus } from '../WeatherCard/HourlyChart/cloudStratus';
 import { createRng } from '../WeatherCard/HourlyChart/random';
 
 // ============================================================================
@@ -79,13 +80,26 @@ const ALGORITHMS = [
     ),
   },
   {
+    name: 'Stratus',
+    note: 'Low dappled field: many small cloudlets on a dithered grid; coverage fattens them from sparse drizzle-sky to thin-cracked sheet.',
+    render: (coverage: number, _idx: number) => (
+      <CloudCanvas
+        draw={drawStratus}
+        coverageAt={() => coverage}
+        seed={`st-${coverage}`}
+        width={W}
+        height={H}
+      />
+    ),
+  },
+  {
     name: 'Stratocumulus',
-    note: 'Dappled field of many small puffs on a jittered grid; coverage fattens them from sparse dapple to thin-cracked sheet.',
+    note: 'Larger organized cloud masses: fewer, blobber clusters with heavier undersides and wider gaps between groups.',
     render: (coverage: number, _idx: number) => (
       <CloudCanvas
         draw={drawStratocumulus}
         coverageAt={() => coverage}
-        seed={`vn-${coverage}`}
+        seed={`sc-${coverage}`}
         width={W}
         height={H}
       />
@@ -232,6 +246,7 @@ const ENVELOPES = [
 
 const VARYING_ALGORITHMS = [
   { name: 'Cirrus', draw: drawCirrus },
+  { name: 'Stratus', draw: drawStratus },
   { name: 'Stratocumulus', draw: drawStratocumulus },
   { name: 'Cumulus', draw: drawCumulus },
   { name: 'Cumulonimbus', draw: drawCumulonimbus },

@@ -17,7 +17,7 @@ import {
   sampleCoverageStats,
 } from './coverageEnvelope';
 import { type Bounds, generatePoints } from './generatePoints';
-import { type CloudType, inferCloudLayers } from './inferCloudType';
+import { type CloudType, inferCloudLayerCoverage } from './inferCloudType';
 import { createRng } from './random';
 // ============================================================================
 // Constants
@@ -498,14 +498,12 @@ const CLOUD_DRAW_FNS: Record<
 > = {
   cumulus: drawCumulus,
   stratocumulus: drawStratocumulus,
-  stratus: drawCirrus,
+  stratus: drawStratus,
   cirrus: drawCirrus,
   cumulonimbus: drawCumulonimbus,
 };
 
-// Back (high altitude) → front (low altitude). Stratus and stratocumulus
-// envelopes are all-zero today (inferCloudLayers never emits them) but the
-// order is ready if they return.
+// Back (high altitude) → front (low altitude).
 const RENDER_ORDER: Exclude<CloudType, 'none'>[] = [
   'cirrus',
   'stratus',
@@ -541,19 +539,18 @@ export function drawClouds(
     return ((t - firstTime) / timeRange) * width;
   };
 
-  // One coverage envelope per cloud type across the whole strip: the hour's
-  // coverage where that layer is present, 0 elsewhere. Night hours included —
-  // they feed correct interpolation right up to the sun boundary. Each type
-  // then renders once as a continuous field, so changing weather reads as
-  // layers waxing and waning rather than a patchwork of per-condition blocks.
+  // One coverage envelope per cloud type across the whole strip: each hour
+  // contributes that type's inferred coverage, or 0 if absent. Night hours
+  // included — they feed correct interpolation right up to the sun boundary.
+  // Each type then renders once as a continuous field, so changing weather
+  // reads as layers waxing and waning rather than per-condition blocks.
   const envelopes = new Map<Exclude<CloudType, 'none'>, CoveragePoint[]>();
   for (const type of RENDER_ORDER) envelopes.set(type, []);
   for (let i = 0; i < forecast.length; i++) {
-    const layers = inferCloudLayers(forecast[i], false);
-    const coverage = (forecast[i].cloud_coverage ?? 50) / 100;
+    const layerCoverage = inferCloudLayerCoverage(forecast, i, false);
     const x = hourX(i);
     for (const type of RENDER_ORDER) {
-      envelopes.get(type)?.push({ x, v: layers.includes(type) ? coverage : 0 });
+      envelopes.get(type)?.push({ x, v: layerCoverage[type] ?? 0 });
     }
   }
 

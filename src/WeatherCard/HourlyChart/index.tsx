@@ -218,7 +218,8 @@ export function HourlyChart({
               const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
               const x = e.clientX - rect.left;
               const index = Math.round((x / rect.width) * (forecast.length - 1));
-              const hour = forecast[Math.max(0, Math.min(forecast.length - 1, index))];
+              const clampedIndex = Math.max(0, Math.min(forecast.length - 1, index));
+              const hour = forecast[clampedIndex];
               console.log('[HourlyChart click]', {
                 datetime: hour.datetime,
                 condition: hour.condition,
@@ -227,7 +228,7 @@ export function HourlyChart({
                 precipitation: hour.precipitation,
                 uv_index: hour.uv_index,
                 temperature: hour.temperature,
-                layers: inferCloudLayers(hour),
+                layers: inferCloudLayers(forecast, clampedIndex),
               });
             }}
           />

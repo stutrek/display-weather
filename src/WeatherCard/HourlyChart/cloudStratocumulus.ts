@@ -1,24 +1,18 @@
 /**
- * Stratocumulus: a layer of many small, fairly flat cloudlets packed across the
- * sky with blue gaps between them — the dappled / mackerel sky.
+ * Stratocumulus: a low, extensive layer of larger organized cloud masses —
+ * the classic "grey blanket with lumps." Cells are 2–3× the size of stratus
+ * elements, puffier and more distinct, forming loose clumps with heavier
+ * undersides and wider gaps between groups.
  *
- * Placement comes from Floyd–Steinberg dithering of the coverage field: a
- * deliberately mediocre, non-serpentine dither whose directional error smear
- * strings the cloudlets out into broken horizontal ripples — the stratocumulus
- * stripes — rather than a mechanical grid. Cloudlets shrink toward the bottom of
- * the band so they read as smaller and more numerous receding to the horizon.
- * Each cloudlet is an irregular cluster of sub-puffs (not a circle). Every
- * sub-puff is drawn as a shaded 3D bead — bright highlight toward the light, far
- * side falling off to a sky-blue SHADE — so the field gets one-sided form with
- * bright spots scattered through it (tops and low lobes alike) and shaded
- * crevices between lobes, while the rims still fade to clear sky.
+ * Same F–S dithering backbone as stratus but with a coarser grid, more lobes
+ * per cluster, stronger underside shading, and reduced perspective recession
+ * (stratocumulus sits in a flat layer rather than receding steeply).
  */
 
 import { sampleCoverageStats } from './coverageEnvelope';
 
-// Sky-family shadow tint for the shaded side of each cloudlet — a muted
-// periwinkle, not grey, so shading stays in the sky's colour family.
-const SHADE = '150, 170, 205';
+// Slightly greyer sky-family tint so the heavier undersides read as substantial.
+const SHADE = '100, 175, 220';
 
 interface Puff {
   cx: number;
@@ -43,8 +37,6 @@ export function drawStratocumulus(
   const off = offscreen.getContext('2d');
   if (!off) return;
 
-  // Bottom of the band: stay above the terrain horizon when one is given,
-  // otherwise fill the whole strip.
   let bottomY = height;
   if (floorAt) {
     let minFloor = height;
@@ -53,42 +45,37 @@ export function drawStratocumulus(
     bottomY = minFloor * 0.94;
   }
 
-  // Cell size driven by the constant chart height (never width) so the dapple
-  // looks identical whether the card is narrow or wide. Small ⇒ many cloudlets.
-  const baseCell = Math.max(9, height * 0.2);
-
+  // Larger base cell → fewer, bigger clouds per unit area.
+  const baseCell = Math.max(16, height * 0.38);
   const puffs: Puff[] = [];
-  // Spawn one irregular cloudlet — a cluster of 3–5 overlapping sub-puffs, so
-  // the silhouette is lumpy and unique rather than a circle.
+
   const spawnCloudlet = (cx: number, cy: number, radius: number): void => {
-    const lobeCount = 3 + Math.floor(rng() * 3); // 3–5
+    const lobeCount = 5 + Math.floor(rng() * 4); // 5–8: wider, blobby masses
     for (let l = 0; l < lobeCount; l++) {
       const ang = rng() * Math.PI * 2;
-      const dist = radius * 0.5 * Math.sqrt(rng());
+      const dist = radius * 0.55 * Math.sqrt(rng());
       const lx = cx + Math.cos(ang) * dist;
-      const ly = cy + Math.sin(ang) * dist * 0.75; // squashed: wider than tall
-      const lr = radius * (0.42 + rng() * 0.3);
+      // More horizontal squash → flat slab shape
+      const ly = cy + Math.sin(ang) * dist * 0.6;
+      const lr = radius * (0.45 + rng() * 0.32);
       puffs.push({ cx: lx, cy: ly, r: lr });
     }
   };
 
-  // Placement by Floyd–Steinberg dithering of the coverage field on a grid
-  // finer than a cloudlet. A plain left-to-right pass with no serpentine flip
-  // is a deliberately mediocre dither: its error always smears the same way, so
-  // fired cells string out into broken horizontal ripples — the stratocumulus
-  // stripes — instead of the mechanical rows a regular grid gives. Each fired
-  // cell is jittered within its cell, so the grid itself never shows.
-  const g = Math.max(3, baseCell * 0.5);
+  const g = Math.max(5, baseCell * 0.6);
   const gridCols = Math.ceil(width / g) + 1;
   const gridRows = Math.ceil((bottomY + baseCell) / g) + 1;
-  const GAIN = 0.3; // peak fraction of cells fired, at full coverage
+  // Higher GAIN → more cells fire at the same coverage level (cells are bigger
+  // so fewer are needed to fill the strip, but we want them to appear at lower coverage).
+  const GAIN = 0.22;
   let errCurr = new Float32Array(gridCols + 2);
   let errNext = new Float32Array(gridCols + 2);
 
   for (let ry = 0; ry < gridRows; ry++) {
     const y = ry * g;
-    const depth = Math.max(0, Math.min(1, y / bottomY)); // 0 top → 1 bottom
-    const persp = 1.35 - 0.85 * depth; // cloudlets shrink toward the horizon
+    // Shallower perspective: stratocumulus is a layer, not a receding field.
+    const depth = Math.max(0, Math.min(1, y / bottomY));
+    const persp = 1.15 - 0.35 * depth;
     errNext.fill(0);
     for (let cx = 0; cx < gridCols; cx++) {
       const x = cx * g;
@@ -97,17 +84,14 @@ export function drawStratocumulus(
       const value = Math.min(1, localCov * GAIN) + errCurr[cx + 1];
       const fired = value >= 0.5 ? 1 : 0;
       const err = value - fired;
-      // Weights skewed hard to the right (vs the usual 7/3/5/1): error rides
-      // along the row, so fired cells string into horizontal runs and the gaps
-      // line up into ripple lanes — the stripes — instead of an even blob field.
-      errCurr[cx + 2] += err * (10 / 16); // → right (same row)
-      errNext[cx] += err * (2 / 16); // ↙ next row
-      errNext[cx + 1] += err * (3 / 16); // ↓ next row
-      errNext[cx + 2] += err * (1 / 16); // ↘ next row
+      errCurr[cx + 2] += err * (10 / 16);
+      errNext[cx] += err * (2 / 16);
+      errNext[cx + 1] += err * (3 / 16);
+      errNext[cx + 2] += err * (1 / 16);
       if (fired) {
-        const jx = x + (rng() - 0.5) * g;
-        const jy = y + (rng() - 0.5) * g * 0.45; // light vertical jitter keeps lanes coherent
-        const radius = baseCell * persp * (0.55 + 0.3 * localCov) * (0.82 + rng() * 0.36);
+        const jx = x + (rng() - 0.5) * g * 0.7;
+        const jy = y + (rng() - 0.5) * g * 0.35;
+        const radius = baseCell * persp * (0.6 + 0.28 * localCov) * (0.8 + rng() * 0.4);
         spawnCloudlet(jx, jy, radius);
       }
     }
@@ -116,33 +100,23 @@ export function drawStratocumulus(
     errNext = swap;
   }
 
-  // Each sub-puff is a shaded 3D bead, not a flat disc: a bright highlight
-  // offset toward the light (upper-left) and a far side that falls off toward
-  // SHADE. Overlapping beads therefore leave a bright spot on every lobe —
-  // including the lobes at a cloudlet's base, so there are light spots low down,
-  // not just a dark underside — with shaded crevices where they meet. The rim
-  // fades to transparent so neighbouring cloudlets still melt together and the
-  // cracks read as clear sky.
   for (const p of puffs.reverse()) {
-    // Pass 1: linear top-to-bottom shading clipped to the circle.
-    // Top is pure white, bottom fades to sky-blue shade. No shading at the top.
     off.save();
     off.beginPath();
     off.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
     off.clip();
     const lin = off.createLinearGradient(p.cx, p.cy - p.r, p.cx, p.cy + p.r);
     lin.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    lin.addColorStop(0.15, 'rgba(255, 255, 255, 1)');
-    lin.addColorStop(1, `rgba(${SHADE}, 0.05)`);
+    // Shading starts earlier and hits harder than stratus → heavier underside.
+    lin.addColorStop(0.35, 'rgba(255, 255, 255, 1)');
+    lin.addColorStop(1, `rgba(${SHADE}, 0.6)`);
     off.fillStyle = lin;
     off.fillRect(p.cx - p.r, p.cy - p.r, p.r * 2, p.r * 2);
     off.restore();
 
-    // Pass 2: center-full-to-edge-transparent overlay brightens the middle and
-    // softens the rim so neighbouring cloudlets bleed into each other.
     const vig = off.createRadialGradient(p.cx, p.cy, 0, p.cx, p.cy, p.r);
-    vig.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-    vig.addColorStop(0.15, 'rgba(255, 255, 255, 0.2)');
+    vig.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+    vig.addColorStop(0.2, 'rgba(255, 255, 255, 0.15)');
     vig.addColorStop(1, 'rgba(255, 255, 255, 0)');
     off.beginPath();
     off.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
