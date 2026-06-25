@@ -1,10 +1,6 @@
 import { css } from 'preact-homeassistant';
 
 export const weatherCardStyles = css`
-:host {
-  display: block;
-}
-
 .weather-card {
   container-type: inline-size;
   color: var(--primary-text-color, #fff);

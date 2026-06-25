@@ -1,4 +1,4 @@
-import { registerPreactCard } from 'preact-homeassistant';
+import { HACard, registerPreactCard } from 'preact-homeassistant';
 import { type WeatherConfig, WeatherProvider } from './WeatherContext';
 import { WeatherDisplay } from './WeatherDisplay';
 import './WeatherCard.styles'; // registers card styles
@@ -21,11 +21,11 @@ function WeatherCardContent({ config }: { config: CardConfig }) {
 
   return (
     <WeatherProvider config={config}>
-      <ha-card class={sizeClass}>
+      <HACard class={sizeClass} align="top">
         <div class="card-content weather-card">
           <WeatherDisplay />
         </div>
-      </ha-card>
+      </HACard>
     </WeatherProvider>
   );
 }
