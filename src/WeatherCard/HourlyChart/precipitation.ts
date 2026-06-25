@@ -13,7 +13,7 @@ import { createRng } from './random';
 /**
  * Check if condition indicates rain
  */
-function hasRain(condition: string | undefined): boolean {
+export function hasRain(condition: string | undefined): boolean {
   if (!condition) return false;
   const rainConditions = ['rainy', 'pouring', 'lightning-rainy', 'snowy-rainy'];
   return rainConditions.some((c) => condition.includes(c));
@@ -22,7 +22,7 @@ function hasRain(condition: string | undefined): boolean {
 /**
  * Check if condition indicates snow
  */
-function hasSnow(condition: string | undefined): boolean {
+export function hasSnow(condition: string | undefined): boolean {
   if (!condition) return false;
   const snowConditions = ['snowy', 'snowy-rainy'];
   return snowConditions.some((c) => condition.includes(c));
@@ -34,7 +34,11 @@ function hasSnow(condition: string | undefined): boolean {
  * Rain: 0.1" = few drops, 3" = many drops
  * Snow: 0.1" = very few flakes, 3" = bunch, 8" = ton
  */
-function getParticleCount(precipitation: number, segmentArea: number, isSnow: boolean): number {
+export function getParticleCount(
+  precipitation: number,
+  segmentArea: number,
+  isSnow: boolean,
+): number {
   if (precipitation <= 0) return 0;
 
   // Base calculation: scale with area (smaller segments = fewer particles)
@@ -54,7 +58,7 @@ function getParticleCount(precipitation: number, segmentArea: number, isSnow: bo
 /**
  * Draw an emoji at a specific point
  */
-function drawEmoji(
+export function drawEmoji(
   ctx: CanvasRenderingContext2D,
   emoji: string,
   x: number,
@@ -78,7 +82,7 @@ function drawEmoji(
  * gentle non-zero baseline keeps calm-air rain from looking pasted-on vertical;
  * lean grows with speed toward a 0.7 cap so streaks never go fully horizontal.
  */
-function windLean(speed: number | undefined): number {
+export function windLean(speed: number | undefined): number {
   const base = 0.15;
   if (!speed) return base;
   return base + Math.min(speed / 30, 1) * (0.7 - base);
@@ -98,7 +102,7 @@ function windLean(speed: number | undefined): number {
  * would read as chaos). `intensity` (0..1) scales length and width so heavier
  * precipitation reads heavier per drop, not just denser.
  */
-function drawRainStreaks(
+export function drawRainStreaks(
   ctx: CanvasRenderingContext2D,
   points: { x: number; y: number }[],
   rng: () => number,
