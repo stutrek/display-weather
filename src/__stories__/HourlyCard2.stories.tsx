@@ -2,10 +2,22 @@ import type { Meta, StoryObj } from '@storybook/preact-vite';
 import { getAllStyles } from 'preact-homeassistant';
 import { HourlyChart, type HourlyChartProps } from '../WeatherCard/HourlyChart';
 import { createAdaptiveTemperatureColorFn } from '../WeatherCard/HourlyChart/colors';
-import type { WeatherForecast } from '../WeatherCard/WeatherContext';
+import type {
+  SunTimes,
+  WeatherConfig,
+  WeatherEntity,
+  WeatherForecast,
+} from '../WeatherCard/WeatherContext';
+import { WeatherProvider } from '../WeatherCard/WeatherContext';
+import { WeatherDisplay } from '../WeatherCard/WeatherDisplay';
 // Import component styles to register them
 import '../WeatherCard/HourlyChart/styles';
+import '../WeatherCard/WeatherCard.styles';
 import * as samples from './hourlyWeatherSamples';
+// Real 48h forecast captured from the local HA dev instance
+// (weather.forecast_home) that reproduced the soft-sunset bug.
+import staleSunForecast from './staleSunForecast.json';
+import weatherEntity from './weatherEntity.json';
 
 // Helper to create color function from sample data
 function createColorFnForSample(data: WeatherForecast[] | undefined) {
@@ -312,6 +324,56 @@ export const AllDayOvercastAllSeasons: Story = {
   name: '☁️ All-Day Overcast - All Seasons',
   render: () => <PatternGrid pattern={samples.allDayOvercast} patternName="All-Day Overcast" />,
   parameters: { layout: 'fullscreen' },
+};
+
+// Real capture from the HA dev instance: a 48-hour forecast starting
+// 2026-07-01T04:00Z paired with a sun.sun entity whose next_rising/next_setting
+// were a full day stale (2026-06-30). The +24h correction in the old sky code
+// only nudged events forward once, so the July-1 sunset (and the whole second
+// day) lost their sharp boundary and rendered as an hour-long fade. This story
+// pins that scenario so the day/night edges must stay abrupt.
+const staleSunTimes: SunTimes = {
+  sunrise: new Date('2026-06-30T09:28:11.077216+00:00'),
+  sunset: new Date('2026-06-30T00:30:53.849675+00:00'),
+  dawn: new Date('2026-06-30T08:54:15.522729+00:00'),
+  dusk: new Date('2026-06-30T01:04:49.244215+00:00'),
+};
+
+// Renders the real capture through the full production pipeline
+// (WeatherProvider → WeatherDisplay), so the WeatherContext future-only filter
+// runs for real. currentTime is pinned to midday (15:30Z) so the visible 24h
+// window centers on the previously-buggy sunset (~20:30 local) followed by the
+// next sunrise — both must read as abrupt day/night borders. Without the
+// currentTime override the filter would drop this fixed-date capture as past.
+const staleSunCurrentTime = new Date('2026-07-01T15:30:00Z');
+
+const staleSunConfig: WeatherConfig = {
+  entity: 'weather.forecast_home',
+  showCurrent: false,
+  showDaily: false,
+  hourlyHours: 24,
+};
+
+export const StaleSunEntity48h: Story = {
+  name: '🌇 Stale Sun Entity (real HA capture, full pipeline)',
+  render: () => (
+    <>
+      <style>{getAllStyles()}</style>
+      <ha-card style={{ width: '400px' }}>
+        <div class="card-content weather-card">
+          <WeatherProvider
+            config={staleSunConfig}
+            entity={weatherEntity as unknown as WeatherEntity}
+            hourlyForecast={staleSunForecast as WeatherForecast[]}
+            sunTimes={staleSunTimes}
+            currentTime={staleSunCurrentTime}
+          >
+            <WeatherDisplay />
+          </WeatherProvider>
+        </div>
+      </ha-card>
+    </>
+  ),
 };
 
 export const DayNightBoundaryTest: Story = {

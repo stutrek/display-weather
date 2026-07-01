@@ -76,6 +76,9 @@ interface WeatherProviderProps {
   // For Storybook/testing: pass sun times and latitude directly
   sunTimes?: SunTimes;
   latitude?: number;
+  // For Storybook/testing: override "now" so fixtures with fixed datetimes
+  // aren't filtered out as past. Defaults to the real current time.
+  currentTime?: Date;
   children: ComponentChildren;
 }
 
@@ -86,6 +89,7 @@ export function WeatherProvider({
   dailyForecast: propDailyForecast,
   sunTimes: propSunTimes,
   latitude: propLatitude,
+  currentTime: propCurrentTime,
   children,
 }: WeatherProviderProps) {
   // Use HAContext hooks to fetch data (only runs if inside HAProvider)
@@ -161,20 +165,20 @@ export function WeatherProvider({
     if (!rawHourlyForecast) return undefined;
 
     // Start from the next whole hour (not current hour)
-    const now = new Date();
+    const now = propCurrentTime ?? new Date();
     const nextHour = new Date(now);
     nextHour.setHours(now.getHours() + 1, 0, 0, 0);
 
     return rawHourlyForecast.filter((item) => {
       return new Date(item.datetime) >= nextHour;
     });
-  }, [rawHourlyForecast]);
+  }, [rawHourlyForecast, propCurrentTime]);
 
   const dailyForecast = useMemo(() => {
     if (!rawDailyForecast) return undefined;
 
     // Exclude dates before today (using start of day comparison)
-    const now = new Date();
+    const now = propCurrentTime ?? new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     return rawDailyForecast.filter((item) => {
@@ -182,7 +186,7 @@ export function WeatherProvider({
       const itemStart = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
       return itemStart >= todayStart;
     });
-  }, [rawDailyForecast]);
+  }, [rawDailyForecast, propCurrentTime]);
 
   // Create adaptive temperature color function based on all forecast data
   const palette = config.temperaturePalette ?? DEFAULT_TEMPERATURE_PALETTE;

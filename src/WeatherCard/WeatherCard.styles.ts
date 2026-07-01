@@ -259,5 +259,23 @@ ha-card.size-large {
   .weather-detail-group {
     justify-content: flex-start;
   }
+} 
+
+/* Fallback for browsers without container queries (e.g. iOS 15 / Safari 15).
+   Container queries never match there, so the header can't stack. Let it wrap
+   instead: the two sections sit side-by-side while there's room, and drop to
+   separate lines when the card is narrow. */
+@supports not (container-type: inline-size) {
+  .weather-header {
+    flex-wrap: wrap;
+    /* space between the stacked rows once they wrap; no effect side-by-side */
+    row-gap: 0.5em;
+  }
+
+  .weather-time-section {
+    /* min-width sets the point at which the section wraps to its own line.
+       Tune to roughly match the 240px container-query breakpoint. */
+    min-width: 150px;
+  }
 }
 `;

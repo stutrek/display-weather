@@ -69,13 +69,6 @@ function isDaytime(datetime: string | number, sunTimes: SunTimes): boolean {
 }
 
 /**
- * Get the color for a specific hour based on day/night
- */
-function getHourColor(datetime: string, sunTimes: SunTimes): string {
-  return isDaytime(datetime, sunTimes) ? COLORS.dayClear : COLORS.nightClear;
-}
-
-/**
  * Draw an emoji at a specific point
  */
 function drawEmoji(
@@ -221,85 +214,45 @@ export function drawSkyBackground(
   // Create horizontal linear gradient (preserves sunrise/sunset positioning)
   const gradient = ctx.createLinearGradient(0, 0, width, 0);
 
-  // Get timeframe boundaries
-  const firstTime = new Date(forecast[0].datetime).getTime();
-  const lastTime = new Date(forecast[forecast.length - 1].datetime).getTime();
-  const timeRange = lastTime - firstTime;
+  // Paint the sky as sharp day/night bands taken from the same daylight
+  // intervals the clouds and stars use. Deriving both from getDaylightIntervals
+  // keeps every sunrise/sunset across the whole window abrupt — including the
+  // second day of a 48h forecast, and events the sun entity only reports as a
+  // single stale next_rising/next_setting timestamp. (The old per-event logic
+  // nudged one sunrise and one sunset by at most +24h, so a boundary more than
+  // a day past the stale sun time silently fell back to an hour-long fade.)
+  const dayIntervals = getDaylightIntervals(forecast, sunTimes, width);
+  const clamp01 = (p: number): number => Math.min(1, Math.max(0, p));
+  const isDayAtX = (x: number): boolean => dayIntervals.some((d) => x >= d.start && x < d.end);
 
-  // Helper to convert timestamp to gradient position (0-1)
-  const getGradientPosition = (timestamp: number): number => {
-    if (timeRange === 0) return 0;
-    return (timestamp - firstTime) / timeRange;
-  };
+  // Small offset (in gradient position space) that turns each boundary into a
+  // ~1px hard edge instead of a linear ramp between adjacent stops.
+  const offset = 0.001;
 
-  // Collect all color stops
   interface ColorStop {
     position: number;
     color: string;
-    isSunEvent?: boolean;
-    isAfterSun?: boolean;
   }
+  const colorStops: ColorStop[] = [
+    { position: 0, color: isDayAtX(0) ? COLORS.dayClear : COLORS.nightClear },
+    { position: 1, color: isDayAtX(width) ? COLORS.dayClear : COLORS.nightClear },
+  ];
 
-  const colorStops: ColorStop[] = [];
-
-  // Add color stops for each hour
-  forecast.forEach((hour, index) => {
-    const position = index / (forecast.length - 1);
-    const color = getHourColor(hour.datetime, sunTimes);
-    colorStops.push({ position, color });
-  });
-  // Add sunrise transition if within range
-  if (sunTimes.sunrise) {
-    let sunriseTime = sunTimes.sunrise.getTime();
-
-    // If sunrise is in the past (before forecast start), add 24 hours to get tomorrow's sunrise
-    if (sunriseTime < firstTime) {
-      sunriseTime += 24 * 60 * 60 * 1000; // Add 24 hours in milliseconds
-    }
-
-    if (sunriseTime >= firstTime && sunriseTime <= lastTime) {
-      const sunrisePos = getGradientPosition(sunriseTime);
-      const offset = 0.001; // Small offset for sharp transition
-
+  // Every interval edge that falls inside the strip is a day/night crossing.
+  for (const interval of dayIntervals) {
+    for (const [edge, becomesDay] of [
+      [interval.start, true],
+      [interval.end, false],
+    ] as const) {
+      if (edge <= 0 || edge >= width) continue; // canvas edges handled by anchors above
+      const pos = edge / width;
       colorStops.push({
-        position: Math.max(0, sunrisePos - offset),
-        color: COLORS.nightClear,
-        isSunEvent: true,
+        position: clamp01(pos - offset),
+        color: becomesDay ? COLORS.nightClear : COLORS.dayClear,
       });
-
       colorStops.push({
-        position: Math.min(1, sunrisePos + offset),
-        color: COLORS.dayClear,
-        isSunEvent: true,
-        isAfterSun: true,
-      });
-    }
-  }
-
-  // Add sunset transition if within range
-  if (sunTimes.sunset) {
-    let sunsetTime = sunTimes.sunset.getTime();
-
-    // If sunset is in the past (before forecast start), add 24 hours to get tomorrow's sunset
-    if (sunsetTime < firstTime) {
-      sunsetTime += 24 * 60 * 60 * 1000; // Add 24 hours in milliseconds
-    }
-
-    if (sunsetTime >= firstTime && sunsetTime <= lastTime) {
-      const sunsetPos = getGradientPosition(sunsetTime);
-      const offset = 0.001; // Small offset for sharp transition
-
-      colorStops.push({
-        position: Math.max(0, sunsetPos - offset),
-        color: COLORS.dayClear,
-        isSunEvent: true,
-      });
-
-      colorStops.push({
-        position: Math.min(1, sunsetPos + offset),
-        color: COLORS.nightClear,
-        isSunEvent: true,
-        isAfterSun: true,
+        position: clamp01(pos + offset),
+        color: becomesDay ? COLORS.dayClear : COLORS.nightClear,
       });
     }
   }
