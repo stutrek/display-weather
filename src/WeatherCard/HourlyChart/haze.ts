@@ -58,11 +58,12 @@ function dewPointC(tempC: number, rh: number): number {
 }
 
 // Moisture haze keyed on dew point (°F). Below CLEAR the air is crisp; by THICK
-// it is oppressive, tropical murk. Capped at MOIST_MAX so clear-condition haze
-// stays short of a total white-out — only fog/hazy conditions reach 1.
+// it is oppressive, tropical murk. A muggy-but-clear afternoon (e.g. ~73°F dew
+// point) should already read as visibly hazy, not just a faint tint, so THICK
+// sits closer to a typical humid summer day than to extreme tropical murk.
 const DEWPOINT_CLEAR_F = 50;
-const DEWPOINT_THICK_F = 78;
-const MOIST_MAX = 0.85;
+const DEWPOINT_THICK_F = 75;
+const MOIST_MAX = 0.92;
 
 // Fallback when temperature is missing: a gentler ramp on bare RH.
 const HUMIDITY_START = 55;
@@ -125,8 +126,8 @@ const NIGHT_HAZE = '128, 122, 148';
 
 // Peak opacity at the horizon, scaled by amount. Day haze is allowed to climb
 // close to a white-out for fog; night stays more restrained.
-const DAY_MAX_ALPHA = 0.82;
-const NIGHT_MAX_ALPHA = 0.6;
+const DAY_MAX_ALPHA = 0.95;
+const NIGHT_MAX_ALPHA = 0.7;
 
 // How tall the wash rises above the horizon, as a fraction of canvas height:
 // BAND_MIN at the faintest haze, BAND_MIN + BAND_SPAN at full fog.
@@ -205,7 +206,7 @@ export function drawHaze(
 
     const grad = ctx.createLinearGradient(0, top, 0, floorY);
     grad.addColorStop(0, `rgba(${color}, 0)`);
-    grad.addColorStop(0.6, `rgba(${color}, ${peak * 0.22})`);
+    grad.addColorStop(0.35, `rgba(${color}, ${peak * 0.45})`);
     grad.addColorStop(1, `rgba(${color}, ${peak})`);
     ctx.fillStyle = grad;
     ctx.fillRect(x, top, 1, floorY - top);

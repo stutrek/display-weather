@@ -81,20 +81,20 @@ export function createTemperaturePositioner(
   const maxTemp = Math.max(...temps);
   const tempRange = maxTemp - minTemp;
 
-  // Reserve margin so the line never clips at the canvas edge, and scale
-  // pixelsPerDegree down if the range would otherwise overflow.
-  const MARGIN = 12;
-  const usableHeight = canvasHeight - MARGIN * 2;
+  // Reserve sky space above the ridge for cloud rendering: the hottest point
+  // of the line should only reach ~60% of the way up the canvas, not crowd
+  // the top edge. A small bottom margin keeps the line off the floor too.
+  const SKY_FRACTION = 0.4;
+  const BOTTOM_MARGIN = 12;
+  const topPadding = canvasHeight * SKY_FRACTION;
+  const usableHeight = canvasHeight - topPadding - BOTTOM_MARGIN;
   const effectivePpd =
     tempRange > 0 ? Math.min(pixelsPerDegree, usableHeight / tempRange) : pixelsPerDegree;
-
-  const heightNeeded = tempRange * effectivePpd;
-  const verticalPadding = (canvasHeight - heightNeeded) / 2;
 
   return {
     getTempY: (temp: number): number => {
       if (tempRange === 0) return canvasHeight / 2;
-      return verticalPadding + (maxTemp - temp) * effectivePpd;
+      return topPadding + (maxTemp - temp) * effectivePpd;
     },
     minTemp,
     maxTemp,
