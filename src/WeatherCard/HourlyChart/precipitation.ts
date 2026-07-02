@@ -126,13 +126,18 @@ export function drawRainStreaks(
 
     const dy = length / Math.sqrt(1 + lean * lean);
     const dx = lean * dy;
-    const x2 = point.x + dx;
+    // Center the streak's horizontal span on the anchor point so the leaning
+    // streaks don't all drift rightward out of the column. Heavier rain makes
+    // streaks longer (larger dx); anchoring at point.x would push that extra
+    // length entirely to the right and make the whole curtain look shifted.
+    const x1 = point.x - dx / 2;
+    const x2 = point.x + dx / 2;
     const y2 = point.y + dy;
 
     // Gradient runs tail (start) → leading drop (end): the streak stays mostly
     // solid blue, fading only gently toward the tail so it reads as a falling
     // line rather than a comet.
-    const grad = ctx.createLinearGradient(point.x, point.y, x2, y2);
+    const grad = ctx.createLinearGradient(x1, point.y, x2, y2);
     grad.addColorStop(0, `rgba(110, 175, 255, ${opacity * 0.4})`);
     grad.addColorStop(0.5, `rgba(120, 185, 255, ${opacity * 0.8})`);
     grad.addColorStop(1, `rgba(140, 200, 255, ${opacity})`);
@@ -140,7 +145,7 @@ export function drawRainStreaks(
     ctx.strokeStyle = grad;
     ctx.lineWidth = width;
     ctx.beginPath();
-    ctx.moveTo(point.x, point.y);
+    ctx.moveTo(x1, point.y);
     ctx.lineTo(x2, y2);
     ctx.stroke();
   }

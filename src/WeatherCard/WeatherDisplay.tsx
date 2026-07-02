@@ -19,6 +19,7 @@ export function WeatherDisplay() {
     precipitationUnit,
     sunTimes,
     getTemperatureColor,
+    temperatureUnit,
   } = useWeather();
 
   if (loading && !entity) {
@@ -51,6 +52,7 @@ export function WeatherDisplay() {
           maxItems={config.hourlyHours ?? 12}
           height={80}
           getTemperatureColor={getTemperatureColor}
+          temperatureUnit={temperatureUnit}
         />
       ),
     });

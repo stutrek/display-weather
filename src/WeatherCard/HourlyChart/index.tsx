@@ -12,6 +12,8 @@ import {
   drawTemperatureLine,
   getWeatherIconForTime,
 } from './canvasHelpers';
+import type { TemperatureUnit } from './colors';
+import { drawHaze } from './haze';
 import { inferCloudLayers } from './inferCloudType';
 import { drawPrecipitation } from './precipitation';
 import { applyTemperatureMask, drawClouds, drawSkyBackground, drawStars } from './sky';
@@ -29,6 +31,8 @@ export interface HourlyChartProps {
   maxItems?: number;
   /** Adaptive temperature color function from context */
   getTemperatureColor: (temp: number) => string;
+  /** Temperature unit, so haze can derive dew point from temperature + humidity */
+  temperatureUnit?: TemperatureUnit;
 }
 
 // ============================================================================
@@ -42,6 +46,7 @@ export function HourlyChart({
   pixelsPerDegree = 3,
   maxItems = 12,
   getTemperatureColor,
+  temperatureUnit = '°F',
 }: HourlyChartProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,9 +81,20 @@ export function HourlyChart({
     applyTemperatureMask(canvas, forecast, pixelsPerDegree);
     drawStars(canvas, forecast, sunTimes);
     drawClouds(canvas, forecast, sunTimes, pixelsPerDegree);
+    // Haze washes the horizon after clouds (dimming low cloud) but before the
+    // terrain, which paints over anything below the ridge.
+    drawHaze(canvas, forecast, sunTimes, pixelsPerDegree, temperatureUnit);
     drawTemperatureLine(canvas, forecast, pixelsPerDegree, getTemperatureColor);
     drawPrecipitation(canvas, forecast); // Drawn last so particles appear on top
-  }, [observedWidth, forecast, sunTimes, height, pixelsPerDegree, getTemperatureColor]);
+  }, [
+    observedWidth,
+    forecast,
+    sunTimes,
+    height,
+    pixelsPerDegree,
+    getTemperatureColor,
+    temperatureUnit,
+  ]);
 
   if (!forecast || forecast.length === 0) {
     return <div className="hourly-no-data">No forecast data available</div>;
