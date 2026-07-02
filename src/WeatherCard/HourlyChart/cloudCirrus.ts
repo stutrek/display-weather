@@ -6,17 +6,29 @@ export function drawCirrus(
   height: number,
   coverageAt: (x: number) => number,
   rng: () => number,
+  floorAt?: (x: number) => number,
 ): void {
   const { mean: meanCov } = sampleCoverageStats(coverageAt, width);
   if (meanCov < 0.005) return;
   const invCdf = makeCoverageInvCdf(coverageAt, width);
+
+  // Scatter strands through the sky band above the temperature line — spread
+  // over the full canvas height, the lower half of them hid behind the
+  // terrain. (No floor → the whole canvas is sky, as in the tuning story.)
+  let skyH = height;
+  if (floorAt) {
+    let sum = 0;
+    const n = Math.max(8, Math.round(width / 24));
+    for (let i = 0; i < n; i++) sum += floorAt(((i + 0.5) / n) * width);
+    skyH = sum / n;
+  }
 
   // Width-scaled count — matches the old 3 + cov * 60 at the story's 360px
   const strandCount = Math.max(2, Math.round((width / 360) * (3 + meanCov * 60)));
 
   for (let i = 0; i < strandCount; i++) {
     const cx = invCdf(rng()); // density follows the coverage envelope
-    const cy = rng() * height;
+    const cy = rng() * skyH;
     const rxBase = 90 + rng() * 180; // absolute px == width * (0.25..0.75) at 360
     const ry = 3 + rng() * 7;
     const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));

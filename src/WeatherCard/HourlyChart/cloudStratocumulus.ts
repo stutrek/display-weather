@@ -136,10 +136,23 @@ export function drawStratocumulus(
   const off = offscreen.getContext('2d');
   if (!off) return;
 
+  // Size everything from the sky depth — the band above the temperature line
+  // — not the full canvas height. The card's terrain eats half the canvas;
+  // full-height sizing made each streak fatter than the entire visible band,
+  // closing the slits into one merged mass. (No floor → depth = height, so
+  // the tuning story is unchanged.)
+  let skyH = height;
+  if (floorAt) {
+    let sum = 0;
+    const n = Math.max(8, Math.round(width / 24));
+    for (let i = 0; i < n; i++) sum += floorAt(((i + 0.5) / n) * width);
+    skyH = sum / n;
+  }
+
   // Streaks come in small groups: 2–4 parallel bands packed a streak apart,
   // with wide sky gaps between groups. Group count climbs with coverage until
   // the groups merge into continuous banding.
-  const spacing = height * 0.6;
+  const spacing = skyH * 0.6;
   const invCdf = makeCoverageInvCdf(coverageAt, width);
   const groupSpan = spacing * 3.2;
   const groupCount = Math.max(1, Math.round((width / groupSpan) * (0.4 + meanCov * 1.8)));
@@ -172,7 +185,7 @@ export function drawStratocumulus(
     // ending on-screen — so the group reads as one long band with ragged
     // companions instead of a mechanical row of identical stripes
     const baseY = floor * (0.62 + baseRoll * 0.2);
-    const topY = height * (0.1 + rng() * 0.25);
+    const topY = skyH * (0.1 + rng() * 0.25);
     const len = Math.max(thick * 1.4, (baseY - topY) / SIN_A);
     return { cx, baseY, len, thick, tapered: true };
   };

@@ -1,34 +1,48 @@
 /**
  * Cumulonimbus: storm towers built with the same construction as the cumulus
  * renderer — flat-based puff rows on a per-cloud canvas, crisp edges, one
- * shading pass — but stacked into tapering tiers with a heavy dark base and
- * a bright sunlit crown.
+ * shading pass per body — stacked into tapering tiers. Each storm is two
+ * overlapping masses: a tall, heavily shaded rear bulk and a shorter, sunlit
+ * front billow cluster. The front's bright crown standing against the rear's
+ * dark mid-mass is what gives the tower depth at a glance — per-lobe shading
+ * reads as bubble wrap, and a single gradient over one mass reads as a flat
+ * blob (both were tried).
  */
 
 import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
 
 // Shadow tone for storm mass — same sky-blue family as cumulus, deepened
-const SHADE = '35, 70, 105';
+// hard: this is the one cloud that's allowed to loom.
+const SHADE = '26, 52, 82';
 
-function drawOneStorm(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  baseY: number,
-  cloudW: number,
+interface Mass {
+  canvas: HTMLCanvasElement;
+  w: number;
+  h: number;
+}
+
+/**
+ * Build one lumpy flat-based mass — tiers of merged solid puffs — on its own
+ * canvas, shaded with ONE top-to-bottom gradient (stops = [position, alpha])
+ * plus the sharp one-sided crevice pass in its lower half.
+ */
+function buildMass(
+  massW: number,
+  massH: number,
+  stops: ReadonlyArray<readonly [number, number]>,
   rng: () => number,
-): void {
-  const maxR = cloudW * 0.17;
+): Mass | null {
+  const maxR = massW * 0.17;
   const pad = Math.ceil(maxR);
-  const towerH = Math.min(cloudW * 0.85, baseY * 0.92);
-  const tempW = Math.ceil(cloudW + pad * 2);
-  const tempH = Math.ceil(towerH + pad);
+  const tempW = Math.ceil(massW + pad * 2);
+  const tempH = Math.ceil(massH + pad);
   const baseLine = tempH - 1; // flat base sits at the bottom of the temp canvas
 
   const temp = document.createElement('canvas');
   temp.width = tempW;
   temp.height = tempH;
   const t = temp.getContext('2d');
-  if (!t) return;
+  if (!t) return null;
 
   // Pass 1 — silhouette only: tiers of solid white puffs from base to crown.
   // The union gives a lumpy outline with a flat interior; all form comes from
@@ -37,17 +51,17 @@ function drawOneStorm(
   const tiers = 3 + Math.round(rng());
   for (let tier = 0; tier < tiers; tier++) {
     const tt = tier / (tiers - 1);
-    const tierW = cloudW * (1 - tt * 0.45) * (0.9 + rng() * 0.2);
-    const tierY = baseLine - tt * (towerH - maxR * 1.4);
+    const tierW = massW * (1 - tt * 0.45) * (0.9 + rng() * 0.2);
+    const tierY = baseLine - tt * (massH - maxR * 1.4);
     // Each tier leans off-center so the tower doesn't stack symmetrically
     const lean = tt * (rng() - 0.5) * maxR * 1.2;
-    const puffCount = Math.max(3, Math.round((tierW / cloudW) * (8 + rng() * 3)));
+    const puffCount = Math.max(3, Math.round((tierW / massW) * (8 + rng() * 3)));
 
     for (let i = 0; i < puffCount; i++) {
       const ft = i / (puffCount - 1);
       const env = 0.6 + 0.4 * Math.sin(Math.PI * (0.1 + 0.8 * ft));
       const r = maxR * env * (0.85 + rng() * 0.3);
-      const px = pad + (cloudW - tierW) / 2 + lean + ft * tierW + (rng() - 0.5) * maxR * 0.4;
+      const px = pad + (massW - tierW) / 2 + lean + ft * tierW + (rng() - 0.5) * maxR * 0.4;
       // Scallop the bottom tier like cumulus; upper tiers jitter vertically
       // so adjacent tiers interlock instead of reading as stacked rows
       const lift = tier === 0 && rng() < 0.3 ? r * 0.3 : 0;
@@ -65,12 +79,12 @@ function drawOneStorm(
     }
   }
 
-  // Pass 2 — whole-cloud shade: bright crown fading into a heavy storm base
+  // Pass 2 — one shading gradient across the whole body.
   t.globalCompositeOperation = 'source-atop';
   const shade = t.createLinearGradient(0, 0, 0, baseLine);
-  shade.addColorStop(0, `rgba(${SHADE}, 0)`);
-  shade.addColorStop(0.35, `rgba(${SHADE}, 0.14)`);
-  shade.addColorStop(1, `rgba(${SHADE}, 0.62)`);
+  for (const [pos, alpha] of stops) {
+    shade.addColorStop(pos, `rgba(${SHADE}, ${alpha})`);
+  }
   t.fillStyle = shade;
   t.fillRect(0, 0, tempW, tempH);
 
@@ -103,12 +117,12 @@ function drawOneStorm(
       s.fill();
       s.globalCompositeOperation = 'source-over';
 
-      // Crevice shadows only in the lower half of the tower: against the
+      // Crevice shadows only in the lower half of the mass: against the
       // heavy base shade they read as crags, but on the flat grey mid-mass
       // they float as leaf shapes. The crown stays smooth and sunlit.
       // Every qualifying lobe gets one — the occlusion pass already erases
       // most of each shadow, so skipping lobes too leaves the base bare.
-      if (lobe.py < baseLine - towerH * 0.5) continue;
+      if (lobe.py < baseLine - massH * 0.5) continue;
       // Shadow grows with distance from the lit top of the lobe: soft fade
       // upward into the light, full strength at the lobe's bottom arc where
       // the circle clip cuts it sharp — the crevice line against the lobe
@@ -129,13 +143,60 @@ function drawOneStorm(
       s.fillRect(lobe.px - lobe.r, lobe.py - lobe.r, lobe.r * 2, lobe.r * 2);
       s.restore();
     }
-    t.globalAlpha = 0.15;
+    t.globalAlpha = 0.3;
     t.drawImage(scratch, 0, 0); // still source-atop: stays inside the cloud
     t.globalAlpha = 1;
   }
   t.globalCompositeOperation = 'source-over';
 
-  ctx.drawImage(temp, Math.round(cx - cloudW / 2 - pad), Math.round(baseY - baseLine));
+  return { canvas: temp, w: tempW, h: tempH };
+}
+
+function drawOneStorm(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  baseY: number,
+  cloudW: number,
+  rng: () => number,
+): void {
+  const towerH = Math.min(cloudW * 1.05, baseY * 0.92);
+
+  // Rear bulk: full height, shadowed through most of its body — the gloom.
+  // Its pale scalloped crown still peeks above the front mass.
+  const rear = buildMass(
+    cloudW * 0.92,
+    towerH,
+    [
+      [0, 0.3],
+      [0.4, 0.68],
+      [1, 0.95],
+    ],
+    rng,
+  );
+
+  // Front billows: shorter, offset to one side, lit nearly white at the
+  // crown. The bright domes standing against the rear's dark mid-mass are
+  // the value break that reads as depth from across the room.
+  const lean = rng() < 0.5 ? -1 : 1;
+  const front = buildMass(
+    cloudW * 0.78,
+    towerH * 0.62,
+    [
+      [0, 0],
+      [0.55, 0.18],
+      [1, 0.75],
+    ],
+    rng,
+  );
+
+  if (rear) {
+    const x = Math.round(cx - lean * cloudW * 0.05 - rear.w / 2);
+    ctx.drawImage(rear.canvas, x, Math.round(baseY - (rear.h - 1)));
+  }
+  if (front) {
+    const x = Math.round(cx + lean * cloudW * 0.14 - front.w / 2);
+    ctx.drawImage(front.canvas, x, Math.round(baseY - (front.h - 1)));
+  }
 }
 
 export function drawCumulonimbus(
@@ -166,7 +227,7 @@ export function drawCumulonimbus(
 
     if (rng() > localCov + 0.5) continue;
 
-    const cloudW = Math.min((110 + rng() * 82) * (0.55 + localCov * 0.6), width * 0.64);
+    const cloudW = Math.min((130 + rng() * 95) * (0.55 + localCov * 0.6), width * 0.64);
     const baseY = height * (0.72 + rng() * 0.18);
 
     // Keep whole storms inside the canvas: a tower chopped at an interval

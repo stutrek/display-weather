@@ -77,6 +77,17 @@ const CONDITION_HAZE: Record<string, number> = {
   hazy: 0.85,
 };
 
+// Storm ceilings: an active storm scrubs the air — its moisture is falling as
+// rain, not hanging as murk — and the pale horizon wash would otherwise bleach
+// the cumulonimbus tower into a white blob exactly when it should loom.
+const STORM_HAZE_CAP: Record<string, number> = {
+  lightning: 0.25,
+  'lightning-rainy': 0.25,
+  hail: 0.25,
+  pouring: 0.35,
+  exceptional: 0.35,
+};
+
 // Visibility → haze, used only when `visibility` is supplied (see the field
 // doc). Clear well above CLEAR, thick murk at/below MURK.
 const VIS_CLEAR = 10;
@@ -110,6 +121,9 @@ export function hazeAmount(entry: HazeForecastEntry, unit: TemperatureUnit = '°
     const vis = clamp01((VIS_CLEAR - entry.visibility) / (VIS_CLEAR - VIS_MURK));
     amount = Math.max(amount, vis);
   }
+
+  const cap = STORM_HAZE_CAP[entry.condition ?? ''];
+  if (cap !== undefined) amount = Math.min(amount, cap);
 
   return clamp01(amount);
 }

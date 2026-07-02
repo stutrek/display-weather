@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   type CloudForecastEntry,
+  type CloudLayerCoverage,
   inferCloudLayerCoverage,
   inferCloudLayers,
 } from './inferCloudType';
 
 // Most cases only depend on the current hour; wrap a single entry so the
-// forward look sees no approaching weather.
+// forward and backward looks see no surrounding weather.
 const only = (entry: CloudForecastEntry): [CloudForecastEntry[], number] => [[entry], 0];
+
+const coverageOf = (layers: CloudLayerCoverage, type: keyof CloudLayerCoverage): number =>
+  layers[type] ?? 0;
 
 describe('inferCloudLayers', () => {
   it('infers baseline cirrus over stratocumulus and cumulus for humid broken cloud cover', () => {
@@ -25,48 +29,48 @@ describe('inferCloudLayers', () => {
   });
 
   it('weights stratocumulus and cumulus separately under the baseline cirrus', () => {
-    expect(
-      inferCloudLayerCoverage(
-        ...only({
-          condition: 'partlycloudy',
-          cloud_coverage: 50,
-          humidity: 70,
-          precipitation: 0,
-          uv_index: 4,
-        }),
-      ),
-    ).toEqual({
-      cirrus: 0.2,
-      stratocumulus: 0.375,
-      cumulus: 0.2,
-    });
+    const cov = inferCloudLayerCoverage(
+      ...only({
+        condition: 'partlycloudy',
+        cloud_coverage: 50,
+        humidity: 70,
+        precipitation: 0,
+        uv_index: 4,
+      }),
+    );
+    expect(coverageOf(cov, 'cirrus')).toBeCloseTo(0.2, 2);
+    expect(coverageOf(cov, 'stratocumulus')).toBeCloseTo(0.38, 2);
+    expect(coverageOf(cov, 'cumulus')).toBeCloseTo(0.19, 2);
   });
 
-  it('infers stratocumulus under baseline cirrus from broad low-cloud coverage', () => {
-    expect(
-      inferCloudLayers(
-        ...only({
-          cloud_coverage: 65,
-          humidity: 75,
-          precipitation: 0,
-          uv_index: 4,
-        }),
-      ),
-    ).toEqual(['cirrus', 'stratocumulus']);
+  it('makes stratocumulus dominant for humid broad low-cloud coverage', () => {
+    const cov = inferCloudLayerCoverage(
+      ...only({
+        cloud_coverage: 65,
+        humidity: 75,
+        precipitation: 0,
+        uv_index: 4,
+      }),
+    );
+    // The lumpy deck owns the sky; cumulus pokes through it, smaller.
+    expect(coverageOf(cov, 'stratocumulus')).toBeGreaterThan(0.4);
+    expect(coverageOf(cov, 'cumulus')).toBeLessThan(coverageOf(cov, 'stratocumulus') / 2);
   });
 
-  it('keeps drier scattered fair-weather clouds as cumulus under baseline cirrus', () => {
-    expect(
-      inferCloudLayers(
-        ...only({
-          condition: 'partlycloudy',
-          cloud_coverage: 35,
-          humidity: 55,
-          precipitation: 0,
-          uv_index: 5,
-        }),
-      ),
-    ).toEqual(['cirrus', 'cumulus']);
+  it('keeps drier scattered fair-weather clouds mostly cumulus under baseline cirrus', () => {
+    const cov = inferCloudLayerCoverage(
+      ...only({
+        condition: 'partlycloudy',
+        cloud_coverage: 35,
+        humidity: 55,
+        precipitation: 0,
+        uv_index: 5,
+      }),
+    );
+    expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.1);
+    // Crossfade, not a switch: a whisper of deck may remain, but cumulus
+    // clearly dominates the dry scattered sky.
+    expect(coverageOf(cov, 'cumulus')).toBeGreaterThan(coverageOf(cov, 'stratocumulus') * 4);
   });
 
   it('keeps dry high-UV fair weather as cirrus over cumulus', () => {
@@ -143,8 +147,33 @@ describe('inferCloudLayers', () => {
   });
 });
 
+describe('coverage prior from condition', () => {
+  it('reads a sunny hour with missing cloud_coverage as near-clear', () => {
+    const cov = inferCloudLayerCoverage(...only({ condition: 'sunny', humidity: 50 }));
+    // The old flat 50% fallback painted half a sky of cloud here.
+    expect(coverageOf(cov, 'cumulus')).toBe(0);
+    expect(coverageOf(cov, 'stratocumulus')).toBe(0);
+    expect(coverageOf(cov, 'stratus')).toBe(0);
+    expect(coverageOf(cov, 'cirrus')).toBeLessThan(0.1);
+  });
+
+  it('reads a cloudy hour with missing cloud_coverage as a substantial deck', () => {
+    const cov = inferCloudLayerCoverage(...only({ condition: 'cloudy', humidity: 75 }));
+    expect(coverageOf(cov, 'stratocumulus')).toBeGreaterThan(0.5);
+  });
+
+  it('caps baseline cirrus at the reported sky cover on a fair day', () => {
+    // The baseline term 0.4·(1−cov) peaks on the clearest skies — uncapped it
+    // painted a 0.36 cirrus veil over a 10%-coverage day.
+    const cov = inferCloudLayerCoverage(
+      ...only({ condition: 'sunny', cloud_coverage: 12, humidity: 40, precipitation: 0 }),
+    );
+    expect(coverageOf(cov, 'cirrus')).toBeLessThanOrEqual(0.12);
+  });
+});
+
 describe('forward look (approaching weather)', () => {
-  it('paints high cirrus harbinger over a fair sky when rain is hours away', () => {
+  it('paints a high cirrus harbinger over a fair sky when rain is hours away', () => {
     const forecast: CloudForecastEntry[] = [
       { condition: 'sunny', cloud_coverage: 10, humidity: 55, precipitation: 0, uv_index: 6 },
       { condition: 'partlycloudy', cloud_coverage: 30, humidity: 60, precipitation: 0 },
@@ -152,8 +181,11 @@ describe('forward look (approaching weather)', () => {
       { condition: 'cloudy', cloud_coverage: 90, humidity: 80, precipitation: 0 },
       { condition: 'rainy', cloud_coverage: 100, humidity: 90, precipitation: 0.2 },
     ];
-    // Far front (4 hours out) → scattered cirrus, no low cloud yet.
-    expect(inferCloudLayers(forecast, 0)).toEqual(['cirrus']);
+    // Far front (4 hours out): high cloud, no meaningful low cloud yet.
+    const cov = inferCloudLayerCoverage(forecast, 0);
+    expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.3);
+    expect(coverageOf(cov, 'cumulus')).toBeLessThan(0.05);
+    expect(coverageOf(cov, 'stratocumulus')).toBe(0);
   });
 
   it('thickens the harbinger to a cirrostratus veil as the front nears', () => {
@@ -161,10 +193,18 @@ describe('forward look (approaching weather)', () => {
       { condition: 'sunny', cloud_coverage: 10, humidity: 60, precipitation: 0 },
       { condition: 'rainy', cloud_coverage: 100, humidity: 90, precipitation: 0.3 },
     ];
-    // Front next hour → cirrostratus veil (still the cirrus renderer), denser.
+    // Front next hour → dense veil dominating the sky.
     const cov = inferCloudLayerCoverage(forecast, 0);
-    expect(Object.keys(cov)).toEqual(['cirrus']);
-    expect(cov.cirrus).toBeGreaterThan(0.4);
+    expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.4);
+  });
+
+  it('raises the harbinger from precipitation probability before any wet condition', () => {
+    const forecast: CloudForecastEntry[] = [
+      { condition: 'sunny', cloud_coverage: 10, humidity: 55, precipitation: 0 },
+      { condition: 'partlycloudy', cloud_coverage: 30, precipitation_probability: 80 },
+    ];
+    const cov = inferCloudLayerCoverage(forecast, 0);
+    expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.4);
   });
 
   it('lowers a dry overcast to altostratus (stratus) ahead of rain', () => {
@@ -182,10 +222,118 @@ describe('forward look (approaching weather)', () => {
     expect(inferCloudLayers(forecast, 0)).toEqual(['stratocumulus']);
   });
 
+  it('escalates cumulus and feathers in the tower just before a storm', () => {
+    const forecast: CloudForecastEntry[] = [
+      { condition: 'partlycloudy', cloud_coverage: 50, humidity: 60, precipitation: 0 },
+      { condition: 'lightning', cloud_coverage: 100, humidity: 88, precipitation: 0.1 },
+    ];
+    const cov = inferCloudLayerCoverage(forecast, 0);
+    // Towering congestus + anvil blowoff + the tower's leading edge.
+    expect(coverageOf(cov, 'cumulus')).toBeGreaterThanOrEqual(0.35);
+    expect(coverageOf(cov, 'cumulonimbus')).toBeCloseTo(0.25, 2);
+    expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.4);
+  });
+
   it('draws nothing at night', () => {
     const forecast: CloudForecastEntry[] = [
       { condition: 'cloudy', cloud_coverage: 95, humidity: 80, precipitation: 0 },
     ];
     expect(inferCloudLayers(forecast, 0, true)).toEqual([]);
+  });
+});
+
+describe('backward look (clearing after rain)', () => {
+  const dryHour: CloudForecastEntry = {
+    condition: 'partlycloudy',
+    cloud_coverage: 40,
+    humidity: 50,
+    precipitation: 0,
+  };
+  const wetHour: CloudForecastEntry = {
+    condition: 'rainy',
+    cloud_coverage: 90,
+    humidity: 90,
+    precipitation: 0.2,
+  };
+
+  it('keeps a stratocumulus deck in the hour right after rain ends', () => {
+    const forecast = [wetHour, dryHour];
+    const cov = inferCloudLayerCoverage(forecast, 1);
+    expect(coverageOf(cov, 'stratocumulus')).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it('decays the leftover deck as the rain recedes into the past', () => {
+    const forecast = [wetHour, dryHour, dryHour, dryHour];
+    const justAfter = coverageOf(inferCloudLayerCoverage(forecast, 1), 'stratocumulus');
+    const later = coverageOf(inferCloudLayerCoverage(forecast, 3), 'stratocumulus');
+    expect(later).toBeLessThan(justAfter);
+  });
+});
+
+describe('diurnal cycle', () => {
+  const at = (datetime: string): CloudForecastEntry => ({
+    datetime,
+    condition: 'partlycloudy',
+    cloud_coverage: 50,
+    humidity: 60,
+    precipitation: 0,
+    uv_index: 4,
+  });
+
+  it('leans lumpy deck in the morning and detached cumulus in the afternoon', () => {
+    const morning = inferCloudLayerCoverage(...only(at('2026-07-02T07:00:00')));
+    const afternoon = inferCloudLayerCoverage(...only(at('2026-07-02T15:00:00')));
+    expect(coverageOf(morning, 'stratocumulus')).toBeGreaterThan(
+      coverageOf(afternoon, 'stratocumulus'),
+    );
+    expect(coverageOf(afternoon, 'cumulus')).toBeGreaterThan(coverageOf(morning, 'cumulus'));
+  });
+});
+
+describe('wind', () => {
+  it('pushes the same sky toward the lumpy deck as wind rises', () => {
+    const base: CloudForecastEntry = {
+      condition: 'partlycloudy',
+      cloud_coverage: 50,
+      humidity: 60,
+      precipitation: 0,
+    };
+    const calm = inferCloudLayerCoverage(...only({ ...base, wind_speed: 2 }));
+    const windy = inferCloudLayerCoverage(...only({ ...base, wind_speed: 30 }));
+    expect(coverageOf(windy, 'stratocumulus')).toBeGreaterThan(coverageOf(calm, 'stratocumulus'));
+  });
+});
+
+describe('continuity (anti-popping)', () => {
+  it('keeps per-layer coverage close across the old humidity threshold', () => {
+    const hour = (humidity: number): CloudForecastEntry => ({
+      condition: 'partlycloudy',
+      cloud_coverage: 50,
+      humidity,
+      precipitation: 0,
+      uv_index: 4,
+    });
+    // Humidity 59 vs 61 used to flip the boolean "lumpy" decision, swapping
+    // which genus owned the coverage between adjacent hours.
+    const below = inferCloudLayerCoverage(...only(hour(59)));
+    const above = inferCloudLayerCoverage(...only(hour(61)));
+    for (const type of ['cirrus', 'stratus', 'stratocumulus', 'cumulus'] as const) {
+      expect(Math.abs(coverageOf(below, type) - coverageOf(above, type))).toBeLessThan(0.1);
+    }
+  });
+
+  it('keeps per-layer coverage close across the old broken-coverage breakpoint', () => {
+    const hour = (cloud_coverage: number): CloudForecastEntry => ({
+      condition: 'partlycloudy',
+      cloud_coverage,
+      humidity: 70,
+      precipitation: 0,
+      uv_index: 4,
+    });
+    const below = inferCloudLayerCoverage(...only(hour(63)));
+    const above = inferCloudLayerCoverage(...only(hour(67)));
+    for (const type of ['cirrus', 'stratus', 'stratocumulus', 'cumulus'] as const) {
+      expect(Math.abs(coverageOf(below, type) - coverageOf(above, type))).toBeLessThan(0.1);
+    }
   });
 });

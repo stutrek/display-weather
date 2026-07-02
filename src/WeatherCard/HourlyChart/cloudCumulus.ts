@@ -114,12 +114,13 @@ export function drawCumulus(
   // guaranteed-cloud fallback below takes the exact same path as the loop.
   const buildCloudAt = (cx: number): { cx: number; baseY: number; cloudW: number } => {
     const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
-    // Size from the fixed canvas height, never the width: the chart height is
-    // constant while width changes, so a height-driven cloud looks identical
-    // whether the card is narrow or wide. The old base size was gated by
-    // `width * 0.72` (right on narrow charts) but by `height * 1.35` on wide
-    // ones, so clouds ballooned as the card widened.
-    let cloudW = height * (0.8 + localCov * 0.45) * (0.85 + rng() * 0.3);
+    // Size from the local sky depth (the band above the temperature line, or
+    // the full canvas height without a floor), never the width: the depth is
+    // constant while width changes, so a depth-driven cloud looks identical
+    // whether the card is narrow or wide. Full-height sizing made puffs span
+    // a third of the card when the terrain squeezed the sky band.
+    const skyH = floorAt ? floorAt(Math.max(0, Math.min(width - 1, cx))) : height;
+    let cloudW = skyH * (0.8 + localCov * 0.45) * (0.85 + rng() * 0.3);
     const baseRoll = rng();
     let baseY = height * (0.4 + baseRoll * 0.25);
     if (floorAt) {
@@ -127,8 +128,7 @@ export function drawCumulus(
       // below 1.0× the floor so the flat base always stays above the horizon —
       // higher rolls used to push baseY past the line (up to 1.1×), dropping
       // the cloud down behind the terrain.
-      const floor = floorAt(Math.max(0, Math.min(width - 1, cx)));
-      baseY = floor * (0.4 + baseRoll * 0.5);
+      baseY = skyH * (0.4 + baseRoll * 0.5);
       // Shrink only when space is truly tight — let domes ride high and clip
       // slightly at the canvas top rather than shrinking with the mound
       cloudW = Math.min(cloudW, Math.max(20, baseY * 2.1));

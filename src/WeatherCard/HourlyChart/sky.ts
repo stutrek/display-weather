@@ -233,9 +233,13 @@ export function drawSkyBackground(
     position: number;
     color: string;
   }
+  // Sample the right anchor a hair inside the canvas: the interval check is
+  // half-open, so a view that ends in daylight has an interval ending exactly
+  // at `width` and isDayAtX(width) read as night — fading the final daytime
+  // hours toward the night colour instead of holding day to the edge.
   const colorStops: ColorStop[] = [
     { position: 0, color: isDayAtX(0) ? COLORS.dayClear : COLORS.nightClear },
-    { position: 1, color: isDayAtX(width) ? COLORS.dayClear : COLORS.nightClear },
+    { position: 1, color: isDayAtX(width - 1e-3) ? COLORS.dayClear : COLORS.nightClear },
   ];
 
   // Every interval edge that falls inside the strip is a day/night crossing.
@@ -348,8 +352,10 @@ export function applyTemperatureMask(
     maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
     maskCtx.filter = 'none';
   } else {
-    // Safari fallback: blur the shape canvas first, then draw
-    blurCanvasInPlace(shapeCtx, shapeCanvas.width, shapeCanvas.height, blurRadius * dpr);
+    // Safari fallback: blur the shape canvas first, then draw. blurRadius is
+    // already in physical pixels — multiplying by dpr again quadrupled the
+    // fade band on retina displays.
+    blurCanvasInPlace(shapeCtx, shapeCanvas.width, shapeCanvas.height, blurRadius);
     // only two because this code path is more aggressive
     maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
     maskCtx.drawImage(shapeCanvas, -MASK_BLUR_RADIUS * dpr, 0);
