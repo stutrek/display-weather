@@ -7,10 +7,10 @@
  * streaks fire and how fat they get; at full coverage the slits nearly close.
  */
 
+import { CLOUD_SHADE_RGB } from './colors';
 import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
 
-// Shadow tone for the streak undersides — deepened sky blue, heavier than cumulus.
-const SHADE = '70, 150, 195';
+const SHADE = CLOUD_SHADE_RGB;
 
 // One consistent lean for every streak: rising to the right.
 const ANGLE = (Math.PI / 180) * 20;
@@ -50,6 +50,7 @@ function drawOneStreak(
   baseY: number,
   len: number,
   thick: number,
+  tapered: boolean,
   rng: () => number,
 ): void {
   const maxR = thick / 2;
@@ -70,10 +71,12 @@ function drawOneStreak(
   // Looser spacing and stronger size jitter scallop the outline so the band
   // reads as a chain of puffs, not a ribbed stripe; the perpendicular wobble
   // keeps the axis from reading as a ruled line.
+  // Short streaks narrow harder toward their visible tip; full bands keep a
+  // gentle narrowing since their upper end is off-screen anyway
   const steps = Math.max(3, Math.ceil(len / (maxR * 0.65)));
   for (let i = 0; i <= steps; i++) {
     const ft = i / steps;
-    const env = 1 - 0.3 * ft;
+    const env = 1 - (tapered ? 0.45 : 0.3) * ft;
     const r = maxR * env * (0.75 + rng() * 0.5);
     const w = (rng() - 0.5) * maxR * 0.6;
     const px = pad + ft * spanX + w * SIN_A;
@@ -141,33 +144,50 @@ export function drawStratocumulus(
   const groupSpan = spacing * 3.2;
   const groupCount = Math.max(1, Math.round((width / groupSpan) * (0.4 + meanCov * 1.8)));
 
-  const buildStreakAt = (cx: number): { cx: number; baseY: number; len: number; thick: number } => {
+  interface Streak {
+    cx: number;
+    baseY: number;
+    len: number;
+    thick: number;
+    tapered: boolean;
+  }
+
+  const buildStreakAt = (cx: number, full: boolean): Streak => {
     const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
     // Fatter streaks at higher coverage — the slit between neighbours narrows
     // toward (but never quite reaches) zero
     const thick = spacing * (0.35 + 0.5 * localCov) * (0.9 + rng() * 0.2);
     const baseRoll = rng();
-    let baseY = height * (0.8 + baseRoll * 0.14);
-    if (floorAt) {
-      const floor = floorAt(Math.max(0, Math.min(width - 1, cx)));
-      baseY = floor * (0.76 + baseRoll * 0.18);
+    const floor = floorAt ? floorAt(Math.max(0, Math.min(width - 1, cx))) : height;
+
+    if (full) {
+      // The group's anchor band runs from its base clear off the top of the
+      // viewport — the upper taper happens off-screen
+      const baseY = floor * (0.78 + baseRoll * 0.16);
+      const len = (baseY + thick * (0.5 + rng())) / SIN_A;
+      return { cx, baseY, len, thick, tapered: false };
     }
-    // Streaks run from their base clear off the top of the viewport — the
-    // upper taper happens off-screen, so on-screen they read as full bands
-    const len = (baseY + thick * (0.5 + rng())) / SIN_A;
-    return { cx, baseY, len, thick };
+
+    // The rest sit shorter at both ends: foot lifted off the deck line, tip
+    // ending on-screen — so the group reads as one long band with ragged
+    // companions instead of a mechanical row of identical stripes
+    const baseY = floor * (0.62 + baseRoll * 0.2);
+    const topY = height * (0.1 + rng() * 0.25);
+    const len = Math.max(thick * 1.4, (baseY - topY) / SIN_A);
+    return { cx, baseY, len, thick, tapered: true };
   };
 
-  // Collect one group: 2–4 streaks marching up-right at the shared rhythm.
-  // Denser coverage grows the group.
-  const streaks: Array<{ cx: number; baseY: number; len: number; thick: number }> = [];
+  // Collect one group: 2–4 streaks marching up-right at the shared rhythm,
+  // exactly one of them the full-height anchor. Denser coverage grows the group.
+  const streaks: Streak[] = [];
   const addGroupAt = (groupCx: number): void => {
     const localCov = coverageAt(Math.max(0, Math.min(width - 1, groupCx)));
     const streakCount = 2 + Math.round(rng() * (1 + localCov * 1.5));
+    const fullIdx = Math.floor(rng() * streakCount);
     const start = groupCx - ((streakCount - 1) / 2) * spacing;
     for (let j = 0; j < streakCount; j++) {
       const cx = start + j * spacing * (0.85 + rng() * 0.3);
-      streaks.push(buildStreakAt(cx));
+      streaks.push(buildStreakAt(cx, j === fullIdx));
     }
   };
 
@@ -193,7 +213,7 @@ export function drawStratocumulus(
   // bodies over the dark flanks and the deck washes out flat white.
   streaks.sort((a, b) => b.cx - a.cx);
   for (const s of streaks) {
-    drawOneStreak(off, s.cx, s.baseY, s.len, s.thick, rng);
+    drawOneStreak(off, s.cx, s.baseY, s.len, s.thick, s.tapered, rng);
   }
 
   ctx.drawImage(offscreen, 0, 0);

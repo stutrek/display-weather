@@ -60,6 +60,15 @@ function toPaletteTemp(temp: number, unit: TemperatureUnit): number {
 }
 
 // ============================================================================
+// Cloud Shading
+// ============================================================================
+
+// Shadow tone shared by most cloud renderers for undersides/interior
+// shading — a deepened sky blue rather than slate. Cumulonimbus uses its own
+// much darker storm tone instead, since it needs to read as heavy weather.
+export const CLOUD_SHADE_RGB = '81, 190, 241';
+
+// ============================================================================
 // Color Interpolation Helpers
 // ============================================================================
 

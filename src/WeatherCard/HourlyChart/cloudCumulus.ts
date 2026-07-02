@@ -4,10 +4,10 @@
  * top-to-bottom shading gradient per cloud rather than per puff.
  */
 
-// Shadow tone for cloud undersides — a deepened sky blue rather than slate
+import { CLOUD_SHADE_RGB } from './colors';
 import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
 
-const SHADE = '70, 155, 195';
+const SHADE = CLOUD_SHADE_RGB;
 
 function drawOneCloud(
   ctx: CanvasRenderingContext2D,
@@ -32,6 +32,7 @@ function drawOneCloud(
   // Centers sit low so the solid part of each puff crosses the canvas bottom,
   // which clips into the crisp flat base.
   const puffCount = 4 + Math.round(rng() * 3);
+  const puffs: Array<{ px: number; py: number; r: number }> = [];
   for (let i = 0; i < puffCount; i++) {
     const ft = i / (puffCount - 1);
     const env = 0.5 + 0.5 * Math.sin(Math.PI * (0.12 + 0.76 * ft));
@@ -50,29 +51,34 @@ function drawOneCloud(
     t.arc(px, py, r, 0, Math.PI * 2);
     t.fillStyle = puff;
     t.fill();
+    puffs.push({ px, py, r });
+  }
 
-    // Soft per-puff under-shading gives the interior form — kept well below
-    // the strength that made the old renderer read as bubble wrap
-    const puffShade = t.createLinearGradient(px, py - r, px, py + r);
+  // Soft per-puff under-shading gives the interior form — kept well below
+  // the strength that made the old renderer read as bubble wrap. Done as a
+  // second pass over the finished silhouette: inline shading gets painted
+  // over by the next puff, flattening the interior to plain white.
+  t.globalCompositeOperation = 'source-atop';
+  for (const pf of puffs) {
+    const puffShade = t.createLinearGradient(pf.px, pf.py - pf.r, pf.px, pf.py + pf.r);
     puffShade.addColorStop(0, `rgba(${SHADE}, 0)`);
     puffShade.addColorStop(0.55, `rgba(${SHADE}, 0)`);
     puffShade.addColorStop(1, `rgba(${SHADE}, 0.15)`);
     t.save();
     t.beginPath();
-    t.arc(px, py, r, 0, Math.PI * 2);
+    t.arc(pf.px, pf.py, pf.r, 0, Math.PI * 2);
     t.clip();
     t.fillStyle = puffShade;
-    t.fillRect(px - r, py - r, r * 2, r * 2);
+    t.fillRect(pf.px - pf.r, pf.py - pf.r, pf.r * 2, pf.r * 2);
     t.restore();
   }
 
   // One shading gradient across the whole cloud: bright dome, dusky base.
   // Confined to the lower portion so the body stays white.
-  t.globalCompositeOperation = 'source-atop';
   const shade = t.createLinearGradient(0, 0, 0, baseLine);
   shade.addColorStop(0, `rgba(${SHADE}, 0)`);
-  shade.addColorStop(0.65, `rgba(${SHADE}, 0.04)`);
-  shade.addColorStop(1, `rgba(${SHADE}, 0.26)`);
+  shade.addColorStop(0.6, `rgba(${SHADE}, 0.05)`);
+  shade.addColorStop(1, `rgba(${SHADE}, 0.32)`);
   t.fillStyle = shade;
   t.fillRect(0, 0, tempW, tempH);
   t.globalCompositeOperation = 'source-over';

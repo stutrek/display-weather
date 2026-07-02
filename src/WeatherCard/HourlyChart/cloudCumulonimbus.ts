@@ -84,7 +84,31 @@ function drawOneStorm(
   const s = scratch.getContext('2d');
   if (s) {
     for (const lobe of lobes) {
-      if (rng() > 0.5) continue;
+      // A crevice shadow is only visible where its lobe peeks out from
+      // behind the lobes drawn after it, so each lobe's body first erases
+      // the shadows of the lobes behind it. Without this occlusion the
+      // shadow arcs float mid-mass and the tower reads as bubbles. The
+      // erase circle is slightly oversized: shadow slivers from lobes that
+      // barely peek out get wiped entirely (they read as floating petals),
+      // and the overreach leaves a hair of lit rim along each crevice.
+      s.globalCompositeOperation = 'destination-out';
+      const eraseR = lobe.r * 1.07;
+      const body = s.createRadialGradient(lobe.px, lobe.py, 0, lobe.px, lobe.py, eraseR);
+      body.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      body.addColorStop(0.93, 'rgba(0, 0, 0, 1)');
+      body.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      s.beginPath();
+      s.arc(lobe.px, lobe.py, eraseR, 0, Math.PI * 2);
+      s.fillStyle = body;
+      s.fill();
+      s.globalCompositeOperation = 'source-over';
+
+      // Crevice shadows only in the lower half of the tower: against the
+      // heavy base shade they read as crags, but on the flat grey mid-mass
+      // they float as leaf shapes. The crown stays smooth and sunlit.
+      // Every qualifying lobe gets one — the occlusion pass already erases
+      // most of each shadow, so skipping lobes too leaves the base bare.
+      if (lobe.py < baseLine - towerH * 0.5) continue;
       // Shadow grows with distance from the lit top of the lobe: soft fade
       // upward into the light, full strength at the lobe's bottom arc where
       // the circle clip cuts it sharp — the crevice line against the lobe

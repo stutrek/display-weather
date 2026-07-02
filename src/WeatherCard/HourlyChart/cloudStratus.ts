@@ -10,10 +10,10 @@
  * never per-puff shading, which reads as beads/noise from across the room.
  */
 
+import { CLOUD_SHADE_RGB } from './colors';
 import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
 
-// Sky-family shadow tint for the veil undersides.
-const SHADE = '70, 155, 195';
+const SHADE = CLOUD_SHADE_RGB;
 
 // Veil layers top to bottom. A layer only appears where local coverage
 // exceeds its threshold, so low coverage shows one broken wisp line and full
