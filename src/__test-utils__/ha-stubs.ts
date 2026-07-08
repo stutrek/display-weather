@@ -78,6 +78,74 @@ if (typeof customElements !== 'undefined' && !customElements.get('ha-icon')) {
   customElements.define('ha-icon', HaIconStub);
 }
 
+if (typeof customElements !== 'undefined' && !customElements.get('ha-adaptive-dialog')) {
+  // Approximation of HA's real ha-adaptive-dialog: a scrim + centered surface
+  // with a header (close button + title) and a scrollable content area. The
+  // real element also switches to a mobile bottom sheet and uses HA's exact
+  // Material chrome — that only shows inside Home Assistant. This stub just
+  // lets the card render and be dismissed in Storybook/tests.
+  class HaAdaptiveDialogStub extends HTMLElement {
+    private _initialized = false;
+
+    connectedCallback() {
+      if (this._initialized) return;
+      this._initialized = true;
+
+      const slotted = Array.from(this.childNodes);
+      const title = this.getAttribute('header-title') ?? '';
+
+      // Scrim
+      this.style.cssText =
+        'position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center;' +
+        'justify-content: center; background: rgba(0, 0, 0, 0.6);';
+      this.addEventListener('click', (e) => {
+        if (e.target === this) this._close();
+      });
+
+      // `width` is an explicit size (not max-width): descendants (e.g. canvas
+      // charts sized via ResizeObserver) need a definite box to measure
+      // against, or a shrink-to-fit surface and a 100%-width child create a
+      // circular layout that settles on an arbitrarily small size.
+      const surface = document.createElement('div');
+      surface.style.cssText =
+        'display: flex; flex-direction: column; width: min(90vw, 560px);' +
+        'max-height: 90vh; border-radius: 28px; overflow: hidden;' +
+        'background: var(--ha-card-background, var(--card-background-color, #1c1c1c));' +
+        'color: var(--primary-text-color, #e1e1e1); box-shadow: 0 8px 32px rgba(0,0,0,0.4);';
+
+      const header = document.createElement('div');
+      header.style.cssText =
+        'display: flex; align-items: center; gap: 16px; padding: 12px 24px 12px 8px;';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText =
+        'border: none; background: none; cursor: pointer; font-size: 20px; line-height: 1;' +
+        'width: 40px; height: 40px; border-radius: 50%; color: inherit; flex-shrink: 0;';
+      closeBtn.addEventListener('click', () => this._close());
+
+      const titleEl = document.createElement('span');
+      titleEl.textContent = title;
+      titleEl.style.cssText = 'flex: 1; min-width: 0; font-size: 1.375rem; font-weight: 400;';
+
+      header.append(closeBtn, titleEl);
+
+      const body = document.createElement('div');
+      body.style.cssText = 'padding: 0 24px 24px; overflow-y: auto;';
+      for (const node of slotted) body.appendChild(node);
+
+      surface.append(header, body);
+      this.appendChild(surface);
+    }
+
+    private _close() {
+      this.dispatchEvent(new CustomEvent('closed', { bubbles: true }));
+    }
+  }
+  customElements.define('ha-adaptive-dialog', HaAdaptiveDialogStub);
+}
+
 if (typeof customElements !== 'undefined' && !customElements.get('ha-select')) {
   class HaSelectStub extends HTMLElement {
     private _select: HTMLSelectElement;

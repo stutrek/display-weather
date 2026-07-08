@@ -8,6 +8,7 @@ declare module 'preact' {
   namespace JSX {
     interface IntrinsicElements {
       'ha-card': any;
+      'ha-adaptive-dialog': any;
       'ha-select': any;
       'ha-list-item': any;
       'ha-icon': any;

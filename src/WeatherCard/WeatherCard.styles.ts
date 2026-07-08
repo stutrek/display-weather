@@ -244,6 +244,39 @@ ha-card.size-large {
   }
 }
 
+/* Current-conditions modal trigger (only current section visible) */
+.weather-current-trigger {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.weather-current-trigger:hover .weather-header,
+.weather-current-trigger:focus-visible .weather-header {
+  opacity: 0.85;
+}
+
+.weather-current-trigger:focus-visible {
+  outline: 2px solid var(--primary-color, #f59e0b);
+  outline-offset: 2px;
+}
+
+/* Dialog shell (scrim, surface, header, close button) is provided by
+   <ha-adaptive-dialog>; this only covers the content slotted into it. */
+.weather-forecast-modal-body {
+  container-type: inline-size;
+  width: 100%;
+  max-width: 480px;
+  font-size: 17.5px;
+}
+
+.weather-forecast-modal-body hr {
+  border-top: 1px solid var(--divider-color, rgba(255, 255, 255, 0.1));
+  margin: 0.5em 0;
+}
+
 /* Compressed / half-width: stack left and right sections */
 @container (max-width: 240px) {
   .weather-header {
