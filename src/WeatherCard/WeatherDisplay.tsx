@@ -2,8 +2,9 @@ import { type ComponentChildren, Fragment } from 'preact';
 import { useCallbackStable } from 'preact-homeassistant';
 import { useState } from 'preact/hooks';
 import { DailyChart } from './DailyChart';
+import { DayDetailModal } from './DayDetailModal';
 import { HourlyChart } from './HourlyChart';
-import { useWeather } from './WeatherContext';
+import { type WeatherForecast, useWeather } from './WeatherContext';
 import { WeatherHeader } from './WeatherHeader';
 
 // ============================================================================
@@ -26,6 +27,9 @@ export function WeatherDisplay() {
 
   const [forecastModalOpen, setForecastModalOpen] = useState(false);
   const closeForecastModal = useCallbackStable(() => setForecastModalOpen(false));
+
+  const [selectedDay, setSelectedDay] = useState<WeatherForecast | null>(null);
+  const closeDayModal = useCallbackStable(() => setSelectedDay(null));
 
   if (loading && !entity) {
     return <div class="weather-loading">Loading weather...</div>;
@@ -61,6 +65,7 @@ export function WeatherDisplay() {
       precipitationUnit={precipitationUnit}
       height={100}
       getTemperatureColor={getTemperatureColor}
+      onDayClick={setSelectedDay}
     />
   );
 
@@ -112,6 +117,15 @@ export function WeatherDisplay() {
             {dailyNode}
           </div>
         </ha-adaptive-dialog>
+      )}
+      {selectedDay && (
+        <DayDetailModal
+          day={selectedDay}
+          windSpeedUnit={windSpeedUnit}
+          precipitationUnit={precipitationUnit}
+          getTemperatureColor={getTemperatureColor}
+          onClose={closeDayModal}
+        />
       )}
     </div>
   );

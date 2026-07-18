@@ -23,6 +23,8 @@ export interface DailyChartProps {
   precipitationUnit?: string;
   /** Adaptive temperature color function from context */
   getTemperatureColor: (temp: number) => string;
+  /** When provided, each day column becomes a click target */
+  onDayClick?: (day: WeatherForecast) => void;
 }
 
 // ============================================================================
@@ -60,6 +62,7 @@ export function DailyChart({
   minColumnWidth = 50,
   precipitationUnit = 'in',
   getTemperatureColor,
+  onDayClick,
 }: DailyChartProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -234,6 +237,23 @@ export function DailyChart({
           </div>
         </div>
       </div>
+
+      {/* Full-height click targets, one per column, laid over the whole chart */}
+      {onDayClick && (
+        <div className="daily-click-row">
+          {visibleForecast.map((day, index) => (
+            <button
+              key={index}
+              type="button"
+              className="daily-click-target"
+              style={{ flex: `0 0 ${columnWidth}%` }}
+              aria-label={`${formatDay(day.datetime)} forecast details`}
+              aria-haspopup="dialog"
+              onClick={() => onDayClick(day)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

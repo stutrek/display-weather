@@ -4,7 +4,10 @@
 // ============================================================================
 
 import type { Meta, StoryObj } from '@storybook/preact-vite';
+import { getAllStyles } from 'preact-homeassistant';
+import { useState } from 'preact/hooks';
 import { DailyChart } from '../WeatherCard/DailyChart';
+import { DayDetailModal } from '../WeatherCard/DayDetailModal';
 import { createAdaptiveTemperatureColorFn } from '../WeatherCard/HourlyChart/colors';
 import type { WeatherForecast } from '../WeatherCard/WeatherContext';
 import {
@@ -38,6 +41,16 @@ function createColorFnForDaily(data: WeatherForecast[]) {
 const meta: Meta<typeof DailyChart> = {
   title: 'Weather/DailyChart',
   component: DailyChart,
+  decorators: [
+    // Cards inject registered css`` styles into their shadow root; stories
+    // render bare components, so inject them into the story tree instead.
+    (Story) => (
+      <>
+        <style>{getAllStyles()}</style>
+        <Story />
+      </>
+    ),
+  ],
   parameters: {
     layout: 'padded',
     backgrounds: {
@@ -244,4 +257,42 @@ const AllScenariosGrid = () => {
 
 export const AllScenarios: Story = {
   render: AllScenariosGrid,
+};
+
+// ============================================================================
+// Clickable Days + Detail Modal
+// Mirrors the WeatherDisplay wiring: click a day column to open the modal
+// (auto-dismisses after 2 minutes).
+// ============================================================================
+
+const ClickableDaysDemo = () => {
+  const [selectedDay, setSelectedDay] = useState<WeatherForecast | null>(null);
+  const getTemperatureColor = createColorFnForDaily(mixedWeek);
+
+  return (
+    <>
+      <DailyChart
+        forecast={mixedWeek}
+        sunTimes={defaultSunTimes}
+        height={120}
+        minColumnWidth={50}
+        precipitationUnit="in"
+        getTemperatureColor={getTemperatureColor}
+        onDayClick={setSelectedDay}
+      />
+      {selectedDay && (
+        <DayDetailModal
+          day={selectedDay}
+          windSpeedUnit="mph"
+          precipitationUnit="in"
+          getTemperatureColor={getTemperatureColor}
+          onClose={() => setSelectedDay(null)}
+        />
+      )}
+    </>
+  );
+};
+
+export const ClickableDays: Story = {
+  render: ClickableDaysDemo,
 };

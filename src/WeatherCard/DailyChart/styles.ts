@@ -91,6 +91,19 @@ export const dailyChartStyles = css`
   transform: translateX(-50%);
 }
 
+/* Per-day click targets (only rendered when the chart has an onDayClick) */
+.daily-click-row {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.daily-click-target {
+  all: unset;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
 /* No Data State */
 .daily-no-data {
   padding: 1rem;
