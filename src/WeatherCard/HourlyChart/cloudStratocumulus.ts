@@ -34,19 +34,20 @@ const SIN_A = Math.sin(ANGLE);
 
 // Lobe size and spacing, in units of the roll's local half-width. Straight
 // from cumulus: few, large lobes — each one about as big as the roll is thick
-// — sitting on the base a little under a radius apart. Their bottom arcs are
-// cut away by the flat base, so all you ever see is a run of top domes, which
-// is what stops a row of circles from reading as a row of circles.
+// — whose bottom arcs the flat base cuts away, so all you ever see is a run of
+// top domes. The step is set just under twice the radius so consecutive lumps
+// overlap only in their lower half: they join near the base and part company
+// above it, leaving a deep notch between crowns. Pack them closer and the
+// notches fill in, and the roll goes back to reading as one smooth tube.
 const LOBE_R = 1.05;
-const LOBE_STEP = 0.8;
+const LOBE_STEP = 1.4;
 
 // Where the flat base cuts, as a perpendicular distance from the centreline in
 // units of the roll's max half-width.
 const CUT_AT = 0.72;
 
-// Spacing of the tufts that fray the roll's flanks, along the axis and in
-// units of the roll's max half-width.
-const TUFT_STEP = 1.6;
+// Share of lumps that get a tuft hung off them.
+const TUFT_CHANCE = 0.35;
 
 interface Lobe {
   px: number;
@@ -122,9 +123,12 @@ function drawOneStreak(
 
   const addLump = (dist: number, halfWidth: number): Lobe => {
     const r = halfWidth * LOBE_R * (0.75 + rng() * 0.5);
-    // A third of the lumps ride higher, so their rounded undersides hang clear
-    // above the cut and scallop the base instead of every lump meeting it flat
-    const lift = rng() < 0.35 ? r * 0.3 : 0;
+    // A quarter of the lumps ride higher, so their rounded undersides hang
+    // clear above the cut and scallop the base instead of every lump meeting
+    // it flat. Kept shallow now that the lumps sit far enough apart to show a
+    // notch: lift one much further and its whole circle clears its neighbours'
+    // outline and it reads as a ball parked on the roll.
+    const lift = rng() < 0.25 ? r * 0.18 : 0;
     const w = baseAt(dist) - r * (0.4 + rng() * 0.3) - lift;
     const along = dist + (rng() - 0.5) * maxR * 0.4;
     const lump = { px: atX(along, w), py: atY(along, w), r };
@@ -158,14 +162,18 @@ function drawOneStreak(
     relief.push({ px: tuftX, py: tuftY, r: scale * 1.15, a: 0.18 });
   };
 
-  const steps = Math.max(3, Math.ceil(len / (maxR * LOBE_STEP)));
-  const tuftEvery = Math.max(1, Math.round((TUFT_STEP * maxR * steps) / len));
-  for (let i = 0; i <= steps; i++) {
-    const ft = i / steps;
+  // Step along the axis by the *local* half-width, not a fixed fraction of the
+  // roll's widest point. A fixed step is wider than two radii wherever the
+  // swell cycle pinches, and there the lumps stop touching altogether and the
+  // roll falls apart into loose balls — worst at low coverage, where the whole
+  // roll is thin.
+  for (let dist = 0; dist <= len; ) {
+    const ft = Math.min(1, dist / len);
     const env = 1 - (tapered ? 0.45 : 0.3) * ft;
-    const halfWidth = maxR * env * swellAt(ft * len);
-    const lump = addLump(ft * len, halfWidth);
-    if (i % tuftEvery === 0 && rng() < 0.6) addTuft(lump);
+    const halfWidth = maxR * env * swellAt(dist);
+    const lump = addLump(dist, halfWidth);
+    if (rng() < TUFT_CHANCE) addTuft(lump);
+    dist += Math.max(maxR * 0.3, halfWidth * LOBE_STEP);
   }
   // A full-width rounded lobe caps the foot so the base ends blunt; it rides
   // the same bow/swell as the first cluster so the foot stays attached
