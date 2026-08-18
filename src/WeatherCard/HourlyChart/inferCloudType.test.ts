@@ -39,8 +39,8 @@ describe('inferCloudLayers', () => {
       }),
     );
     expect(coverageOf(cov, 'cirrus')).toBeCloseTo(0.2, 2);
-    expect(coverageOf(cov, 'stratocumulus')).toBeCloseTo(0.38, 2);
-    expect(coverageOf(cov, 'cumulus')).toBeCloseTo(0.19, 2);
+    expect(coverageOf(cov, 'stratocumulus')).toBeCloseTo(0.25, 2);
+    expect(coverageOf(cov, 'cumulus')).toBeCloseTo(0.16, 2);
   });
 
   it('makes stratocumulus dominant for humid broad low-cloud coverage', () => {
@@ -184,7 +184,9 @@ describe('forward look (approaching weather)', () => {
     // Far front (4 hours out): high cloud, no meaningful low cloud yet.
     const cov = inferCloudLayerCoverage(forecast, 0);
     expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.3);
-    expect(coverageOf(cov, 'cumulus')).toBeLessThan(0.05);
+    // A dry, near-clear sky hands the whole low band to cumulus, so what is
+    // left is just the reported 10% cover faded down — a few small puffs.
+    expect(coverageOf(cov, 'cumulus')).toBeCloseTo(0.05, 2);
     expect(coverageOf(cov, 'stratocumulus')).toBe(0);
   });
 
@@ -287,6 +289,36 @@ describe('diurnal cycle', () => {
       coverageOf(afternoon, 'stratocumulus'),
     );
     expect(coverageOf(afternoon, 'cumulus')).toBeGreaterThan(coverageOf(morning, 'cumulus'));
+  });
+});
+
+describe('low-band form (deck vs detached puffs)', () => {
+  const afternoon = (over: Partial<CloudForecastEntry>): CloudForecastEntry => ({
+    condition: 'partlycloudy',
+    cloud_coverage: 40,
+    humidity: 60,
+    precipitation: 0,
+    uv_index: 4,
+    datetime: '2026-07-02T14:00:00',
+    ...over,
+  });
+
+  it('does not let humidity alone turn a scattered afternoon into a deck', () => {
+    // Surface RH sits above 65% on plenty of textbook cumulus afternoons; it
+    // used to be the switch that decided the low band on its own.
+    const humid = inferCloudLayerCoverage(...only(afternoon({ humidity: 85 })));
+    expect(coverageOf(humid, 'cumulus')).toBeGreaterThan(coverageOf(humid, 'stratocumulus'));
+  });
+
+  it('turns the same afternoon into a deck once the sky closes up', () => {
+    const closing = inferCloudLayerCoverage(...only(afternoon({ cloud_coverage: 80 })));
+    expect(coverageOf(closing, 'stratocumulus')).toBeGreaterThan(coverageOf(closing, 'cumulus'));
+  });
+
+  it('drops the losing form instead of drawing both low genera', () => {
+    const scattered = inferCloudLayerCoverage(...only(afternoon({ cloud_coverage: 30 })));
+    expect(coverageOf(scattered, 'cumulus')).toBeGreaterThan(0.2);
+    expect(coverageOf(scattered, 'stratocumulus')).toBe(0);
   });
 });
 

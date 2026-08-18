@@ -230,10 +230,12 @@ interface BandCloud {
 
 // --------------------------------------------------------------------------
 // Primary band: the low/mid deck and the convective tower — the weather that
-// is here now. Wet and foggy hours are categorical; every dry hour is a
-// proportional split of the observed coverage between altostratus (the sheet
-// lowering ahead of a front), stratocumulus (the lumpy deck) and cumulus
-// (detached puffs), driven by continuous scores.
+// is here now. Wet and foggy hours are categorical; every dry hour splits the
+// observed coverage between altostratus (the sheet lowering ahead of a front),
+// stratocumulus (the lumpy deck) and cumulus (detached puffs), driven by
+// continuous scores. The split is deliberately decisive: sky cover and the
+// diurnal cycle pick a form, and the losing form drops out rather than being
+// drawn underneath — two low genera stacked every hour read as clutter.
 // --------------------------------------------------------------------------
 function decidePrimary(sig: HourSignals): BandCloud[] {
   const { entry, cov, ahead } = sig;
@@ -254,32 +256,47 @@ function decidePrimary(sig: HourSignals): BandCloud[] {
   const fade = smoothstep(cov, 0.05, COV_FEW);
   // Detached puffs close up into one continuous deck as coverage rises.
   const sheet = smoothstep(cov, COV_SCATTERED, COV_OVERCAST);
+  // Signed sky-cover reading: 0 at a few scattered puffs, 1 at overcast.
+  const closure = smoothstep(cov, COV_FEW, COV_OVERCAST);
   // Wind mixes a flat layer into rolls and favours the lumpy deck.
   const windMix = smoothstep(entry.wind_speed ?? 0, 10, 25);
 
   // Lumpiness 0..1: how much the low cloud reads as a stratocumulus deck
-  // versus detached cumulus. Moist air, cloudy conditions and wind push
-  // lumpy; dry bright air and afternoon convection push detached. Mornings
-  // lean lumpy (overnight deck not yet burned off), afternoons lean cumulus.
+  // versus detached cumulus, as a signed vote around a neutral 0.5. What
+  // decides it is *organisation*: a sky closing up, wind shearing the layer
+  // into rolls, and the deck rain leaves behind all say "deck", while surface
+  // heating says "detached tower". Humidity is only a modifier — surface RH
+  // sits above 65% on plenty of textbook cumulus afternoons, so driving the
+  // decision from it made every humid hour a deck.
   const lumpiness = clamp01(
-    smoothstep(humidity, 50, 75) +
-      (isCloudy ? 0.1 : 0) +
-      windMix * 0.2 +
-      (0.5 - sig.convective) * 0.3 -
+    0.5 +
+      (closure - 0.5) * 0.85 +
+      windMix * 0.25 +
+      sig.recentRain * 0.35 -
+      (sig.convective - 0.5) * 0.7 +
+      (smoothstep(humidity, 45, 80) - 0.5) * 0.25 +
+      (isCloudy ? 0.05 : 0) -
       sig.dry * (1 - sheet) * 0.5,
   );
+
+  // The low band commits: a sky reads as one form or the other, and only a
+  // genuinely ambiguous vote draws both. Doubling the distance from neutral
+  // hands the whole band to the winner once lumpiness clears 0.75 / 0.25,
+  // while keeping the crossfade continuous across neighbouring hours.
+  const lumpyShare = clamp01(0.5 + (lumpiness - 0.5) * 2);
+  const detachedShare = clamp01(0.5 - (lumpiness - 0.5) * 2);
 
   // Altostratus: the sheet portion lowers and greys ahead of a front.
   const altostratus = cov * sheet * ahead.harbinger;
 
   // Stratocumulus: the lumpy share of the deck, ceding to altostratus as the
   // front nears; floored by the decaying deck left behind by recent rain.
-  let stratocumulus = cov * lumpiness * (0.75 + 0.25 * sheet) * (1 - ahead.harbinger * sheet);
-  stratocumulus = Math.max(stratocumulus, sig.recentRain * cov * 0.9);
+  let stratocumulus = cov * lumpyShare * (0.75 + 0.25 * sheet) * (1 - ahead.harbinger * sheet);
+  stratocumulus = Math.max(stratocumulus, sig.recentRain * cov * 0.8);
 
-  // Cumulus: the detached share. A broken deck keeps some cumulus pushing
-  // through it (the 0.4 floor); towers up (congestus) just ahead of a storm.
-  let cumulus = cov * (1 - sheet) * Math.max(1 - lumpiness, 0.4);
+  // Cumulus: the detached share, gone once the deck closes over. Towers up
+  // (congestus) just ahead of a storm.
+  let cumulus = cov * detachedShare * (1 - sheet);
   cumulus = Math.max(cumulus, ahead.stormSoon * cov * 0.7);
 
   // The tower feathers in ahead of the storm hour instead of jumping 0→1.
