@@ -6,11 +6,31 @@ conditions plus hourly and daily forecast charts.
 ## Features
 
 - Current temperature, humidity, and conditions
-- Hourly forecast chart with temperature gradient and precipitation
+- Hourly forecast chart with realistic sky-rendered clouds and precipitation
 - Daily forecast chart
 - Sky color rendering tied to sunrise/sunset
 - Three sizes (small / medium / large)
 - Bundles into a single `display-weather.js` for HACS distribution
+
+## How conditions are shown
+
+Rather than icons, the hourly chart renders conditions as an actual sky:
+
+- **Daytime** shows clouds. These aren't decoration for the reported
+  condition string — cloud type, altitude, and coverage are inferred from
+  cloud cover, humidity, wind, and nearby hours (including hours before and
+  after), so the shapes are a prediction of what the sky will actually look
+  like: puffy cumulus on a fair afternoon, a lumpy stratocumulus deck, a
+  thickening cirrus veil ahead of a front, or a cumulonimbus tower for a
+  storm.
+- **Nighttime** shows stars instead of clouds. Star density tracks cloud
+  cover, so a clear night is dense with stars and a cloudy night is nearly
+  starless — starryness is a read on sky clarity.
+- **Haze** washes the horizon based on dew point (temperature + humidity),
+  so hot muggy air reads visibly hazy while the same humidity in cold air
+  stays crisp. Fog/haze conditions force it further.
+- **Precipitation** falls as rain or snow particles over the affected hours,
+  matching the forecasted precipitation type.
 
 ## Install
 
