@@ -16,6 +16,8 @@ conditions plus hourly and daily forecast charts.
 
 Rather than icons, the hourly chart renders conditions as an actual sky:
 
+<img width="1306" height="527" alt="image" src="https://github.com/user-attachments/assets/de03872d-da0d-499a-b43b-6b23109772ff" />
+
 - **Daytime** shows clouds. These aren't decoration for the reported
   condition string — cloud type, altitude, and coverage are inferred from
   cloud cover, humidity, wind, and nearby hours (including hours before and
