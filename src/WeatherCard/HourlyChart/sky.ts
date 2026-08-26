@@ -275,6 +275,58 @@ export function drawSkyBackground(
 }
 
 /**
+ * Relative luminance 0 (black) → 1 (white) of the first opaque background
+ * behind the canvas, or `undefined` if nothing opaque was found.
+ */
+function backgroundLuminance(canvas: HTMLCanvasElement): number | undefined {
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) return undefined;
+  for (let el: Element | null = canvas; el; el = el.parentElement) {
+    const bg = getComputedStyle(el).backgroundColor;
+    if (!bg) continue;
+    // Round-tripping through fillStyle normalises any CSS colour syntax
+    // (named, hsl, colour-mix, …) to rgb()/rgba() or #rrggbb.
+    probe.fillStyle = '#000';
+    probe.fillStyle = bg;
+    const norm = probe.fillStyle as string;
+    let r: number;
+    let g: number;
+    let b: number;
+    if (norm.startsWith('#')) {
+      r = Number.parseInt(norm.slice(1, 3), 16);
+      g = Number.parseInt(norm.slice(3, 5), 16);
+      b = Number.parseInt(norm.slice(5, 7), 16);
+    } else {
+      const parts = norm.match(/[\d.]+/g);
+      if (!parts || parts.length < 3) continue;
+      if (parts.length > 3 && Number(parts[3]) < 0.9) continue; // see-through
+      [r, g, b] = parts.slice(0, 3).map(Number);
+    }
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  }
+  return undefined;
+}
+
+// How much of the blurred mask is actually erased. The mask fades the sky out
+// along the ridge by making those pixels transparent, which means the card
+// behind the canvas is what shows through: on a dark card that reads as depth,
+// but on a light one the same band turns into a white glare hanging over the
+// horizon — the sky's own colour is gone exactly where the clouds meet it.
+// Erasing less on a light card keeps the sky opaque enough to stay sky.
+const MASK_ERASE_DARK = 1;
+const MASK_ERASE_LIGHT = 0.45;
+// Luminance either side of which the background counts as fully dark / light.
+const BG_DARK = 0.25;
+const BG_LIGHT = 0.7;
+
+function maskEraseStrength(canvas: HTMLCanvasElement): number {
+  const lum = backgroundLuminance(canvas);
+  if (lum === undefined) return MASK_ERASE_DARK;
+  const t = Math.max(0, Math.min(1, (lum - BG_DARK) / (BG_LIGHT - BG_DARK)));
+  return MASK_ERASE_DARK + (MASK_ERASE_LIGHT - MASK_ERASE_DARK) * t;
+}
+
+/**
  * Apply a blurred mask based on the temperature line to fade the sky
  * Creates a soft transition that follows the temperature line contour
  * Drawing the mask multiple times makes the fade more aggressive
@@ -364,6 +416,7 @@ export function applyTemperatureMask(
   // Draw the blurred mask onto main canvas with destination-out
   ctx.save();
   ctx.globalCompositeOperation = 'destination-out';
+  ctx.globalAlpha = maskEraseStrength(canvas);
   ctx.drawImage(maskCanvas, 0, 0, width, height);
   ctx.restore();
 }

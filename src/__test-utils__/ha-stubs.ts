@@ -40,6 +40,16 @@ if (typeof customElements !== 'undefined' && !customElements.get('ha-icon')) {
     }
 
     connectedCallback() {
+      // Real ha-icon sizes the *host* from --mdc-icon-size; the svg then fills
+      // it. Sizing the svg directly (1em of the inherited font size) ignored
+      // every `--mdc-icon-size: 3em` in the card styles, so the big header
+      // icon came out body-text sized in Storybook but correct inside HA.
+      this.style.display = 'inline-flex';
+      this.style.alignItems = 'center';
+      this.style.justifyContent = 'center';
+      this.style.width = 'var(--mdc-icon-size, 24px)';
+      this.style.height = 'var(--mdc-icon-size, 24px)';
+      this.style.flexShrink = '0';
       this.render();
     }
 
@@ -66,12 +76,12 @@ if (typeof customElements !== 'undefined' && !customElements.get('ha-icon')) {
 
       if (path) {
         this.innerHTML = `
-          <svg viewBox="0 0 24 24" style="width: 1em; height: 1em; fill: currentColor;">
+          <svg viewBox="0 0 24 24" style="width: 100%; height: 100%; fill: currentColor;">
             <path d="${path}" />
           </svg>
         `;
       } else {
-        this.innerHTML = '<span style="font-size: 1em;">●</span>';
+        this.innerHTML = '<span style="font-size: 0.75em;">●</span>';
       }
     }
   }

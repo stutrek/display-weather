@@ -1,5 +1,7 @@
 # Display Weather
 
+![A fair-weather day rendered by Display Weather, shown on a light and a dark background](docs/lede.png)
+
 A Home Assistant custom card designed for wall-mounted displays. Shows current
 conditions plus hourly and daily forecast charts.
 
@@ -18,8 +20,7 @@ Rather than icons, the hourly chart renders conditions as an actual sky:
 
 <img width="1306" height="527" alt="image" src="https://github.com/user-attachments/assets/de03872d-da0d-499a-b43b-6b23109772ff" />
 
-- **Daytime** shows clouds. These aren't decoration for the reported
-  condition string — cloud type, altitude, and coverage are inferred from
+- **Daytime** shows clouds. Cloud type, altitude, and coverage are inferred from
   cloud cover, humidity, wind, and nearby hours (including hours before and
   after), so the shapes are a prediction of what the sky will actually look
   like: puffy cumulus on a fair afternoon, a lumpy stratocumulus deck, a
