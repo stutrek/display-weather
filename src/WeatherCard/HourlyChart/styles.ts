@@ -9,6 +9,11 @@ export const hourlyChartStyles = css`
   box-sizing: border-box;
 }
 
+/* Content box inside the container padding; also the width measurement target. */
+.hourly-chart-inner {
+  width: 100%;
+}
+
 /* Weather Icons Row */
 .hourly-icons-row {
   position: relative;

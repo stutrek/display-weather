@@ -101,9 +101,12 @@ export function HourlyChart({
   }
 
   return (
-    <div ref={containerRef} className="hourly-chart-container">
-      {/* Canvas with absolutely positioned labels */}
-      <div>
+    <div className="hourly-chart-container">
+      {/* Canvas with absolutely positioned labels. The width measurement lives
+          here, inside the container's horizontal padding — useWidth reads
+          offsetWidth, so measuring the padded container would size the canvas
+          20px too wide and push it past the right edge. */}
+      <div ref={containerRef} className="hourly-chart-inner">
         {/* Weather icons row above canvas */}
         <div className="hourly-icons-row">
           {(() => {
