@@ -58,6 +58,33 @@ export interface WeatherContextValue {
 }
 
 // ============================================================================
+// Units
+// ============================================================================
+
+const MM_PER_UNIT: Record<string, number> = { mm: 1, cm: 10, in: 25.4 };
+
+/**
+ * HA reports forecast precipitation in the weather entity's own
+ * `precipitation_unit`, which can differ from the system unit (e.g. cm on a
+ * US-customary install). Convert so every value matches the display unit.
+ */
+function convertPrecipitation(
+  forecast: WeatherForecast[],
+  fromUnit: string | undefined,
+  toUnit: string,
+): WeatherForecast[] {
+  const from = fromUnit ? MM_PER_UNIT[fromUnit] : undefined;
+  const to = MM_PER_UNIT[toUnit];
+  if (!from || !to || from === to) return forecast;
+  const factor = from / to;
+  return forecast.map((item) =>
+    item.precipitation === undefined
+      ? item
+      : { ...item, precipitation: item.precipitation * factor },
+  );
+}
+
+// ============================================================================
 // Context
 // ============================================================================
 
@@ -159,6 +186,9 @@ export function WeatherProvider({
   const entityTemperatureUnit = (entity?.attributes as { temperature_unit?: string } | undefined)
     ?.temperature_unit as TemperatureUnit | undefined;
   const temperatureUnit: TemperatureUnit = entityTemperatureUnit ?? configTemperatureUnit ?? '°F';
+  const entityPrecipitationUnit = (
+    entity?.attributes as { precipitation_unit?: string } | undefined
+  )?.precipitation_unit;
 
   // Filter forecasts to show only future time periods
   const hourlyForecast = useMemo(() => {
@@ -169,10 +199,11 @@ export function WeatherProvider({
     const nextHour = new Date(now);
     nextHour.setHours(now.getHours() + 1, 0, 0, 0);
 
-    return rawHourlyForecast.filter((item) => {
+    const future = rawHourlyForecast.filter((item) => {
       return new Date(item.datetime) >= nextHour;
     });
-  }, [rawHourlyForecast, propCurrentTime]);
+    return convertPrecipitation(future, entityPrecipitationUnit, precipitationUnit);
+  }, [rawHourlyForecast, propCurrentTime, entityPrecipitationUnit, precipitationUnit]);
 
   const dailyForecast = useMemo(() => {
     if (!rawDailyForecast) return undefined;
@@ -181,12 +212,13 @@ export function WeatherProvider({
     const now = propCurrentTime ?? new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    return rawDailyForecast.filter((item) => {
+    const future = rawDailyForecast.filter((item) => {
       const itemDate = new Date(item.datetime);
       const itemStart = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
       return itemStart >= todayStart;
     });
-  }, [rawDailyForecast, propCurrentTime]);
+    return convertPrecipitation(future, entityPrecipitationUnit, precipitationUnit);
+  }, [rawDailyForecast, propCurrentTime, entityPrecipitationUnit, precipitationUnit]);
 
   // Create adaptive temperature color function based on all forecast data
   const palette = config.temperaturePalette ?? DEFAULT_TEMPERATURE_PALETTE;
