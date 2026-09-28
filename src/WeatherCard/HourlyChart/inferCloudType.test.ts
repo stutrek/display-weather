@@ -172,6 +172,27 @@ describe('coverage prior from condition', () => {
   });
 });
 
+describe('clear conditions', () => {
+  it('draws nothing on a sunny hour, whatever the reported coverage', () => {
+    const cov = inferCloudLayerCoverage(
+      ...only({ condition: 'sunny', cloud_coverage: 25, humidity: 45, uv_index: 7 }),
+    );
+    expect(cov).toEqual({});
+  });
+
+  it('draws nothing on a clear night', () => {
+    const cov = inferCloudLayerCoverage(...only({ condition: 'clear-night', cloud_coverage: 15 }));
+    expect(cov).toEqual({});
+  });
+
+  it('starts drawing cloud once the condition is partly cloudy', () => {
+    const cov = inferCloudLayerCoverage(
+      ...only({ condition: 'partlycloudy', cloud_coverage: 25, humidity: 45 }),
+    );
+    expect(coverageOf(cov, 'cumulus')).toBeGreaterThan(0.1);
+  });
+});
+
 describe('forward look (approaching weather)', () => {
   it('paints a high cirrus harbinger over a fair sky when rain is hours away', () => {
     const forecast: CloudForecastEntry[] = [
@@ -184,9 +205,8 @@ describe('forward look (approaching weather)', () => {
     // Far front (4 hours out): high cloud, no meaningful low cloud yet.
     const cov = inferCloudLayerCoverage(forecast, 0);
     expect(coverageOf(cov, 'cirrus')).toBeGreaterThan(0.3);
-    // A dry, near-clear sky hands the whole low band to cumulus, so what is
-    // left is just the reported 10% cover faded down — a few small puffs.
-    expect(coverageOf(cov, 'cumulus')).toBeCloseTo(0.05, 2);
+    // The hour itself is sunny, so no low cloud yet — just the harbinger.
+    expect(coverageOf(cov, 'cumulus')).toBe(0);
     expect(coverageOf(cov, 'stratocumulus')).toBe(0);
   });
 

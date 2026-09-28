@@ -9,8 +9,13 @@ describe('targetPixelCoverage', () => {
     expect(targetPixelCoverage(1)).toBe(1);
   });
 
-  it('paints more than the reported share, since the strip looks at the horizon', () => {
-    for (const c of [0.1, 0.25, 0.5, 0.75]) {
+  it('paints a sparse sky exactly as reported', () => {
+    expect(targetPixelCoverage(0.1)).toBeCloseTo(0.1, 5);
+    expect(targetPixelCoverage(0.2)).toBeCloseTo(0.2, 5);
+  });
+
+  it('paints more than the reported share through the broken range', () => {
+    for (const c of [0.25, 0.5, 0.75]) {
       expect(targetPixelCoverage(c)).toBeGreaterThan(c);
     }
     expect(targetPixelCoverage(0.5)).toBeLessThan(0.65);
@@ -33,7 +38,12 @@ describe('lowCloudTotal', () => {
   });
 
   it('fades out toward a clear sky', () => {
-    expect(lowCloudTotal({ condition: 'sunny', cloud_coverage: 3 })).toBe(0);
-    expect(lowCloudTotal({ condition: 'sunny', cloud_coverage: 10 })).toBeLessThan(0.1);
+    expect(lowCloudTotal({ condition: 'partlycloudy', cloud_coverage: 3 })).toBe(0);
+    expect(lowCloudTotal({ condition: 'partlycloudy', cloud_coverage: 10 })).toBeLessThan(0.1);
+  });
+
+  it('is zero for a clear condition', () => {
+    expect(lowCloudTotal({ condition: 'sunny', cloud_coverage: 25 })).toBe(0);
+    expect(lowCloudTotal({ condition: 'clear-night', cloud_coverage: 15 })).toBe(0);
   });
 });

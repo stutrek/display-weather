@@ -107,6 +107,10 @@ const STORM_CONDITIONS = ['lightning', 'lightning-rainy', 'exceptional', 'pourin
 const PRECIP_CONDITIONS = ['rainy', 'snowy', 'snowy-rainy'];
 const FOG_CONDITIONS = ['fog', 'hazy', 'foggy'];
 const CLOUDY_CONDITIONS = ['cloudy', 'partlycloudy', 'partly-cloudy'];
+// A clear condition draws a clear sky, whatever cloud_coverage says: met.no
+// files "fair" (a few clouds, often thin and high) under sunny too, and a
+// sunny hour painted with puffs reads as wrong on the wall.
+const CLEAR_CONDITIONS = ['sunny', 'clear-night'];
 
 // Coverage prior by condition, used when the provider omits cloud_coverage.
 // (A flat 50% fallback puts a half-covered sky on a "sunny" hour.)
@@ -142,6 +146,8 @@ const WET_PRECIP = 0.05;
 const isStorm = (e: CloudForecastEntry): boolean => STORM_CONDITIONS.includes(e.condition ?? '');
 
 const isFog = (e: CloudForecastEntry): boolean => FOG_CONDITIONS.includes(e.condition ?? '');
+
+const isClear = (e: CloudForecastEntry): boolean => CLEAR_CONDITIONS.includes(e.condition ?? '');
 
 // Wet = producing precipitation now: a rain/snow condition, an active storm, or
 // measurable precip regardless of the condition string.
@@ -249,6 +255,9 @@ function decidePrimary(sig: HourSignals): BandCloud[] {
   // Fog / haze → ground-hugging flat layer.
   if (isFog(entry)) return [{ genus: 'stratus', coverage: cov }];
 
+  // Clear condition → no low cloud at all.
+  if (isClear(entry)) return [];
+
   const humidity = entry.humidity ?? 60;
   const isCloudy = CLOUDY_CONDITIONS.includes(entry.condition ?? '');
 
@@ -336,7 +345,9 @@ function decideHigh(sig: HourSignals): BandCloud | null {
   // a 10%-coverage day must read near-clear, not carry a 0.36 cirrus veil.
   // The veil and anvil are exempt: they announce weather the coverage number
   // doesn't include yet.
-  const fairIce = Math.min(Math.max(dryIce, base), cov * 0.8);
+  // A clear hour carries none: only the veil and anvil, which announce
+  // weather still to come, may cross a sunny sky.
+  const fairIce = isClear(entry) ? 0 : Math.min(Math.max(dryIce, base), cov * 0.8);
 
   const coverage = Math.max(veil, anvil, fairIce) * visibility;
   if (coverage <= 0.005) return null;
@@ -357,6 +368,7 @@ function decideHigh(sig: HourSignals): BandCloud | null {
 export function lowCloudTotal(entry: CloudForecastEntry): number {
   const cov = effectiveCoverage(entry);
   if (isStorm(entry) || isWet(entry) || isFog(entry)) return cov;
+  if (isClear(entry)) return 0;
   return cov * smoothstep(cov, 0.05, COV_FEW);
 }
 
