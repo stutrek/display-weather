@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { drawCirrus } from '../WeatherCard/HourlyChart/cloudCirrus';
 import { drawCumulonimbus } from '../WeatherCard/HourlyChart/cloudCumulonimbus';
 import { drawCumulus } from '../WeatherCard/HourlyChart/cloudCumulus';
+import { drawDeck } from '../WeatherCard/HourlyChart/cloudDeck';
 import { drawStratocumulus } from '../WeatherCard/HourlyChart/cloudStratocumulus';
 import { drawStratus } from '../WeatherCard/HourlyChart/cloudStratus';
 import { createRng } from '../WeatherCard/HourlyChart/random';
@@ -100,6 +101,19 @@ const ALGORITHMS = [
         draw={drawStratocumulus}
         coverageAt={() => coverage}
         seed={`sc-${coverage}`}
+        width={W}
+        height={H}
+      />
+    ),
+  },
+  {
+    name: 'Deck',
+    note: 'Low/mid sheet: flattened cumulus banks placed by measured coverage, perspective-sized, with a backing sheet near overcast.',
+    render: (coverage: number, idx: number) => (
+      <CloudCanvas
+        draw={drawDeck}
+        coverageAt={() => coverage}
+        seed={`dk-${idx}-${coverage}`}
         width={W}
         height={H}
       />
@@ -246,6 +260,7 @@ const ENVELOPES = [
 
 const VARYING_ALGORITHMS = [
   { name: 'Cirrus', draw: drawCirrus },
+  { name: 'Deck', draw: drawDeck },
   { name: 'Stratus', draw: drawStratus },
   { name: 'Stratocumulus', draw: drawStratocumulus },
   { name: 'Cumulus', draw: drawCumulus },
@@ -338,6 +353,190 @@ function VaryingCoverageGrid() {
 }
 
 // ============================================================================
+// Coverage audit — measured pixel coverage of the sky band vs requested cov.
+// Panels match the card's proportions: a short canvas whose sky is only the
+// band above a temperature-line floor. Terrain is painted over the floor so
+// the panel shows exactly what the card would.
+// ============================================================================
+
+const AW = 720;
+const AUDIT_SIZES = [
+  { name: 'card', h: 100 },
+  { name: 'tall', h: 200 },
+];
+const AUDIT_COVERAGES = [0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
+
+// Midday-hot ridge: sky is deepest at the edges, shallowest mid-strip.
+const auditFloor =
+  (h: number) =>
+  (x: number): number =>
+    h * (0.62 - 0.2 * Math.sin((Math.PI * x) / AW));
+
+interface CoverageReading {
+  total: number;
+  thirds: [number, number, number];
+}
+
+// Fraction of sky-band pixels with alpha > 0.5, overall and per vertical third
+// of the band (top / middle / bottom, measured per column against its floor).
+function measureSkyCoverage(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  floorAt: (x: number) => number,
+): CoverageReading {
+  const data = ctx.getImageData(0, 0, width, height).data;
+  let sky = 0;
+  let covered = 0;
+  const thirdSky = [0, 0, 0];
+  const thirdCov = [0, 0, 0];
+  for (let x = 0; x < width; x++) {
+    const floor = Math.min(height, Math.max(1, floorAt(x)));
+    for (let y = 0; y < floor; y++) {
+      const third = Math.min(2, Math.floor((y / floor) * 3));
+      const hit = data[(y * width + x) * 4 + 3] > 127 ? 1 : 0;
+      sky++;
+      covered += hit;
+      thirdSky[third]++;
+      thirdCov[third] += hit;
+    }
+  }
+  return {
+    total: covered / sky,
+    thirds: [0, 1, 2].map((i) => thirdCov[i] / thirdSky[i]) as [number, number, number],
+  };
+}
+
+function AuditCanvas({
+  draw,
+  coverage,
+  height,
+  seed,
+}: {
+  draw: FloorDrawFn;
+  coverage: number;
+  height: number;
+  seed: string;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const labelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext('2d', { willReadFrequently: true });
+    if (!canvas || !ctx) return;
+    const floorAt = auditFloor(height);
+    ctx.clearRect(0, 0, AW, height);
+    const t0 = performance.now();
+    draw(ctx, AW, height, () => coverage, createRng(seed), floorAt);
+    const ms = performance.now() - t0;
+    const r = measureSkyCoverage(ctx, AW, height, floorAt);
+    if (labelRef.current) {
+      const pct = (v: number) => `${Math.round(v * 100)}%`;
+      labelRef.current.textContent = `asked ${pct(coverage)} → drew ${pct(r.total)}   (top ${pct(r.thirds[0])} · mid ${pct(r.thirds[1])} · low ${pct(r.thirds[2])})  ${ms.toFixed(0)}ms`;
+      labelRef.current.dataset.total = r.total.toFixed(3);
+    }
+    // Terrain over the floor, after measuring
+    ctx.fillStyle = '#4fa657';
+    ctx.beginPath();
+    ctx.moveTo(0, height);
+    for (let x = 0; x <= AW; x += 4) ctx.lineTo(x, floorAt(x));
+    ctx.lineTo(AW, height);
+    ctx.closePath();
+    ctx.fill();
+  }, [draw, coverage, height, seed]);
+
+  return (
+    <div>
+      <div
+        ref={labelRef}
+        class="audit-label"
+        style={{
+          fontFamily: 'ui-monospace, monospace',
+          color: '#e5e7eb',
+          fontSize: '0.75rem',
+          marginBottom: '0.25rem',
+        }}
+      />
+      <div style={{ background: SKY_BLUE, borderRadius: '8px', overflow: 'hidden' }}>
+        <canvas ref={ref} width={AW} height={height} style={{ display: 'block' }} />
+      </div>
+    </div>
+  );
+}
+
+type FloorDrawFn = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  coverageAt: (x: number) => number,
+  rng: () => number,
+  floorAt?: (x: number) => number,
+) => void;
+
+const deckVariant =
+  (lump: number, wet: number): FloorDrawFn =>
+  (ctx, w, h, cov, rng, floorAt) =>
+    drawDeck(ctx, w, h, cov, rng, floorAt, { lumpAt: () => lump, wetAt: () => wet });
+
+const AUDIT_ALGORITHMS: Array<{ name: string; draw: FloorDrawFn }> = [
+  { name: 'Cumulus', draw: drawCumulus },
+  { name: 'Deck', draw: deckVariant(0.5, 0) },
+  { name: 'DeckFlat', draw: deckVariant(0, 0) },
+  { name: 'DeckLumpy', draw: deckVariant(1, 0) },
+  { name: 'DeckRain', draw: deckVariant(0.2, 1) },
+  { name: 'Stratus', draw: drawStratus },
+  { name: 'Stratocumulus', draw: drawStratocumulus },
+  { name: 'Cumulonimbus', draw: drawCumulonimbus },
+  { name: 'Cirrus', draw: drawCirrus },
+];
+
+function CoverageAuditGrid() {
+  return (
+    <div
+      style={{
+        padding: '2rem',
+        background: '#111827',
+        minHeight: '100vh',
+        boxSizing: 'border-box',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
+      <h2 style={{ color: '#e5e7eb', marginTop: 0 }}>Coverage Audit</h2>
+      {AUDIT_SIZES.map((size) => (
+        <Fragment key={size.name}>
+          <h3 style={{ color: '#9ca3af' }}>
+            {AW}×{size.h} ({size.name})
+          </h3>
+          {AUDIT_ALGORITHMS.map((alg) => (
+            <div key={alg.name} data-alg={alg.name} data-size={size.name}>
+              <h4 style={{ color: '#e5e7eb', margin: '1rem 0 0.5rem' }}>{alg.name}</h4>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(2, ${AW}px)`,
+                  gap: '0.75rem',
+                }}
+              >
+                {AUDIT_COVERAGES.map((c) => (
+                  <AuditCanvas
+                    key={c}
+                    draw={alg.draw}
+                    coverage={c}
+                    height={size.h}
+                    seed={`audit-${alg.name}-${c}`}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
 // Meta & Stories
 // ============================================================================
 
@@ -357,4 +556,9 @@ export const AlgorithmComparison: Story = {
 export const VaryingCoverage: Story = {
   name: 'Varying Coverage',
   render: () => <VaryingCoverageGrid />,
+};
+
+export const CoverageAudit: Story = {
+  name: 'Coverage Audit',
+  render: () => <CoverageAuditGrid />,
 };

@@ -153,7 +153,7 @@ const isWet = (e: CloudForecastEntry): boolean =>
 // Likelihood 0..1 that an hour is wet: certain when actually raining, else a
 // ramp on precipitation probability (30% → 0, 80% → 1) so approaching fronts
 // register hours before the first wet condition string.
-const wetness = (e: CloudForecastEntry): number =>
+export const wetness = (e: CloudForecastEntry): number =>
   isWet(e) ? 1 : clamp01(((e.precipitation_probability ?? 0) - 30) / 50);
 
 interface Ahead {
@@ -345,6 +345,19 @@ function decideHigh(sig: HourSignals): BandCloud | null {
   // cirrus (both collapse to the cirrus renderer).
   const genus: CloudGenus = ahead.rainETA <= 4 ? 'cirrostratus' : 'cirrus';
   return { genus, coverage };
+}
+
+/**
+ * The share of the sky the low/mid band should cover for an hour: the
+ * reported coverage, faded out toward a clear sky exactly as decidePrimary
+ * fades its genera. decidePrimary splits this between forms, and its decisive
+ * split lets coverage go missing where neither form wins outright; the
+ * renderer rescales the low layers back up to this total.
+ */
+export function lowCloudTotal(entry: CloudForecastEntry): number {
+  const cov = effectiveCoverage(entry);
+  if (isStorm(entry) || isWet(entry) || isFog(entry)) return cov;
+  return cov * smoothstep(cov, 0.05, COV_FEW);
 }
 
 /**

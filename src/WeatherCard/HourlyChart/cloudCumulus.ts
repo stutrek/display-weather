@@ -5,28 +5,29 @@
  */
 
 import { CLOUD_SHADE_RGB } from './colors';
-import { makeCoverageInvCdf, sampleCoverageStats } from './coverageEnvelope';
+import { makeCoverageInvCdf, sampleCoverageStats, targetPixelCoverage } from './coverageEnvelope';
+import { createMask, fillToCoverage } from './coverageFill';
 
 const SHADE = CLOUD_SHADE_RGB;
 
-function drawOneCloud(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  baseY: number,
-  cloudW: number,
-  rng: () => number,
-): void {
+interface Cloud {
+  cx: number;
+  baseY: number;
+  cloudW: number;
+  puffs: Array<{ px: number; py: number; r: number }>;
+  pad: number;
+  tempW: number;
+  tempH: number;
+  baseLine: number;
+}
+
+/** Lay out one cloud's puffs. Geometry only, so it can be stamped and drawn. */
+function buildCloud(cx: number, baseY: number, cloudW: number, rng: () => number): Cloud {
   const maxR = cloudW * 0.26;
   const pad = Math.ceil(maxR);
   const tempW = Math.ceil(cloudW + pad * 2);
   const tempH = Math.ceil(maxR * 2 + pad);
   const baseLine = tempH - 1; // flat base sits at the bottom of the temp canvas
-
-  const temp = document.createElement('canvas');
-  temp.width = tempW;
-  temp.height = tempH;
-  const t = temp.getContext('2d');
-  if (!t) return;
 
   // Puffs along the base; envelope peaks in the middle for a domed silhouette.
   // Centers sit low so the solid part of each puff crosses the canvas bottom,
@@ -42,7 +43,20 @@ function drawOneCloud(
     // cut — scallops the base so it doesn't read as a ruler line
     const lift = rng() < 0.35 ? r * 0.35 : 0;
     const py = baseLine - r * (0.4 + rng() * 0.3) - lift;
+    puffs.push({ px, py, r });
+  }
+  return { cx, baseY, cloudW, puffs, pad, tempW, tempH, baseLine };
+}
 
+function drawOneCloud(ctx: CanvasRenderingContext2D, cloud: Cloud): void {
+  const { puffs, tempW, tempH, baseLine } = cloud;
+  const temp = document.createElement('canvas');
+  temp.width = tempW;
+  temp.height = tempH;
+  const t = temp.getContext('2d');
+  if (!t) return;
+
+  for (const { px, py, r } of puffs) {
     const puff = t.createRadialGradient(px, py, 0, px, py, r);
     puff.addColorStop(0, 'rgba(255, 255, 255, 1)');
     puff.addColorStop(0.95, 'rgba(255, 255, 255, 0.98)');
@@ -51,7 +65,6 @@ function drawOneCloud(
     t.arc(px, py, r, 0, Math.PI * 2);
     t.fillStyle = puff;
     t.fill();
-    puffs.push({ px, py, r });
   }
 
   // Soft per-puff under-shading gives the interior form — kept well below
@@ -83,7 +96,18 @@ function drawOneCloud(
   t.fillRect(0, 0, tempW, tempH);
   t.globalCompositeOperation = 'source-over';
 
-  ctx.drawImage(temp, Math.round(cx - cloudW / 2 - pad), Math.round(baseY - baseLine));
+  ctx.drawImage(
+    temp,
+    Math.round(cloud.cx - cloud.cloudW / 2 - cloud.pad),
+    Math.round(cloud.baseY - baseLine),
+  );
+}
+
+export interface CloudFillOptions {
+  /** Shared coverage mask holding the layers already drawn behind this one */
+  mask?: CanvasRenderingContext2D;
+  /** Target share of sky pixels covered at x; defaults from coverageAt */
+  targetAt?: (x: number) => number;
 }
 
 export function drawCumulus(
@@ -93,86 +117,66 @@ export function drawCumulus(
   coverageAt: (x: number) => number,
   rng: () => number,
   floorAt?: (x: number) => number,
+  fill: CloudFillOptions = {},
 ): void {
-  const { mean: meanCov } = sampleCoverageStats(coverageAt, width);
-  const invCdf = makeCoverageInvCdf(coverageAt, width);
+  const { max: maxCov } = sampleCoverageStats(coverageAt, width);
+  if (maxCov < 0.005) return;
+  const floor = (x: number): number =>
+    floorAt ? floorAt(Math.max(0, Math.min(width - 1, x))) : height;
+  const mask = fill.mask ?? createMask(width, height);
+  if (!mask) return;
 
-  const offscreen = document.createElement('canvas');
-  offscreen.width = width;
-  offscreen.height = height;
-  const off = offscreen.getContext('2d');
-  if (!off) return;
-
-  // Fewer, larger clouds — small ones read as dots from across the room.
-  // Count scales with width and coverage; cloud size with local coverage.
-  // Narrow canvases (a short daylight sliver at dawn/dusk) drop the 2-cloud
-  // minimum — forcing 2 center-clamped clouds into ~40px stacks them into
-  // one oversized blob.
-  const count = Math.max(width >= 160 ? 2 : 1, Math.round((width / 70) * (0.4 + meanCov * 2.4)));
-
-  // Size and place a single cloud centred near cx. Factored out so the
-  // guaranteed-cloud fallback below takes the exact same path as the loop.
-  const buildCloudAt = (cx: number): { cx: number; baseY: number; cloudW: number } => {
-    const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
-    // Size from the local sky depth (the band above the temperature line, or
-    // the full canvas height without a floor), never the width: the depth is
-    // constant while width changes, so a depth-driven cloud looks identical
-    // whether the card is narrow or wide. Full-height sizing made puffs span
-    // a third of the card when the terrain squeezed the sky band.
-    const skyH = floorAt ? floorAt(Math.max(0, Math.min(width - 1, cx))) : height;
-    let cloudW = skyH * (0.8 + localCov * 0.45) * (0.85 + rng() * 0.3);
-    const baseRoll = rng();
-    let baseY = height * (0.4 + baseRoll * 0.25);
-    if (floorAt) {
-      // Scatter bases through the sky band above the temperature line. Capped
-      // below 1.0× the floor so the flat base always stays above the horizon —
-      // higher rolls used to push baseY past the line (up to 1.1×), dropping
-      // the cloud down behind the terrain.
-      baseY = skyH * (0.4 + baseRoll * 0.5);
-      // Shrink only when space is truly tight — let domes ride high and clip
-      // slightly at the canvas top rather than shrinking with the mound
-      cloudW = Math.min(cloudW, Math.max(20, baseY * 2.1));
-    }
-
+  // Size and place a single cloud whose visible mass centres on (x, y).
+  const buildAt = (x: number, y: number, skyH: number): Cloud => {
+    const localCov = coverageAt(Math.max(0, Math.min(width - 1, x)));
+    // Size from the local sky depth, never the width, so a cloud looks the
+    // same on a narrow or wide card. Perspective: clouds overhead (high in the
+    // band) are nearer and larger, those at the horizon distant and small —
+    // which also packs the low band that a uniform size left blue.
+    const alt = 1 - Math.max(0, Math.min(1, y / skyH));
+    const perspective = 0.6 + 0.6 * alt;
+    let cloudW = skyH * (0.8 + localCov * 0.45) * (0.85 + rng() * 0.3) * perspective;
     // Clamp only so a cloud can't overflow a narrow daylight sliver
     // (sunrise/sunset); on normal widths this never binds.
     cloudW = Math.min(cloudW, width * 0.72);
+    // Visible dome is about a third of the width; hang the base below the
+    // requested centre, but never past the horizon — a base behind the
+    // terrain drops the whole cloud out of sight.
+    const baseY = Math.min(skyH, y + cloudW * 0.16);
 
     // Keep whole clouds inside the canvas: a cloud chopped at an interval
     // edge (sunrise/sunset) reads as a vertical bar
     const halfSpan = cloudW * 0.76;
-    const clampedCx =
-      width >= halfSpan * 2 ? Math.max(halfSpan, Math.min(width - halfSpan, cx)) : width / 2;
-    return { cx: clampedCx, baseY, cloudW };
+    const cx =
+      width >= halfSpan * 2 ? Math.max(halfSpan, Math.min(width - halfSpan, x)) : width / 2;
+    return buildCloud(cx, baseY, cloudW, rng);
   };
 
-  const clouds: Array<{ cx: number; baseY: number; cloudW: number }> = [];
-  for (let i = 0; i < count; i++) {
-    // Stratified slots with jitter, mapped through the coverage inverse-CDF
-    // so cloud density follows the envelope (identity at constant coverage)
-    const cx = invCdf((i + 0.5 + (rng() - 0.5) * 0.9) / count);
-    const localCov = coverageAt(Math.max(0, Math.min(width - 1, cx)));
-
-    // Thin out clouds in low-coverage regions — controls density, not brightness
-    if (rng() > localCov + 0.4) continue;
-
-    clouds.push(buildCloudAt(cx));
-  }
+  const clouds = fillToCoverage<Cloud>({
+    width,
+    height,
+    floorAt: floor,
+    targetAt: fill.targetAt ?? ((x) => targetPixelCoverage(coverageAt(x))),
+    rng,
+    mask,
+    build: ({ x, y, floor: skyH }) => buildAt(x, y, skyH),
+    stamp: (m, c) => {
+      drawOneCloud(m, c);
+      return { x0: c.cx - c.cloudW, x1: c.cx + c.cloudW };
+    },
+    maxBodies: Math.max(4, Math.round(width / 12)),
+  });
 
   // The caller only invokes this renderer when coverage is non-trivial, so the
-  // cumulus layer must never end up empty. A low cloud count plus unlucky
-  // thinning rolls can drop every cloud — which read as clouds vanishing
-  // entirely while resizing. Guarantee one at the coverage centroid.
-  if (clouds.length === 0) {
-    clouds.push(buildCloudAt(invCdf(0.5)));
+  // layer must never end up empty (a front layer can be fully topped up by
+  // the ones behind it — then it has nothing to add, which is fine).
+  if (clouds.length === 0 && !fill.mask) {
+    const x = makeCoverageInvCdf(coverageAt, width)(0.5);
+    clouds.push(buildAt(x, floor(x) * 0.6, floor(x)));
   }
 
   // Draw back-to-front: higher (further) clouds first, so lower clouds always
   // overlap them — random stacking makes the overlaps look off
   clouds.sort((a, b) => a.baseY - b.baseY);
-  for (const c of clouds) {
-    drawOneCloud(off, c.cx, c.baseY, c.cloudW, rng);
-  }
-
-  ctx.drawImage(offscreen, 0, 0);
+  for (const c of clouds) drawOneCloud(ctx, c);
 }

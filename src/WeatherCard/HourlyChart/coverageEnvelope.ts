@@ -33,6 +33,20 @@ export function makeCoverageInterpolator(points: CoveragePoint[]): (x: number) =
   };
 }
 
+/**
+ * Share of the sky band's pixels a coverage value should actually paint.
+ * Runs above the reported number: the strip looks toward the horizon, where
+ * foreshortening makes a half-covered dome read as mostly covered. Eases to a
+ * fully closed sky through the overcast range so 100% leaves no blue.
+ */
+export function targetPixelCoverage(cov: number): number {
+  const c = Math.max(0, Math.min(1, cov));
+  const base = c ** 0.8;
+  const t = Math.max(0, Math.min(1, (c - 0.8) / 0.15));
+  const close = t * t * (3 - 2 * t);
+  return base + (1 - base) * close;
+}
+
 function sampleCount(width: number): number {
   return Math.max(16, Math.round(width / 8));
 }

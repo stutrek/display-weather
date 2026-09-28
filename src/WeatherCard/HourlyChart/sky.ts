@@ -9,15 +9,16 @@ import { appendSmoothCurve, createTemperaturePositioner } from './canvasHelpers'
 import { drawCirrus } from './cloudCirrus';
 import { drawCumulonimbus } from './cloudCumulonimbus';
 import { drawCumulus } from './cloudCumulus';
-import { drawStratocumulus } from './cloudStratocumulus';
-import { drawStratus } from './cloudStratus';
+import { drawDeck } from './cloudDeck';
 import {
   type CoveragePoint,
   makeCoverageInterpolator,
   sampleCoverageStats,
+  targetPixelCoverage,
 } from './coverageEnvelope';
+import { createMask } from './coverageFill';
 import { type Bounds, generatePoints } from './generatePoints';
-import { type CloudType, inferCloudLayerCoverage } from './inferCloudType';
+import { inferCloudLayerCoverage, lowCloudTotal, wetness } from './inferCloudType';
 import { createRng } from './random';
 // ============================================================================
 // Constants
@@ -476,7 +477,9 @@ export function drawStars(
 
     const segmentArea = segmentBounds.width * height;
     const baseStarDensity = 0.03;
-    const starCount = Math.max(1, Math.round(segmentArea * baseStarDensity * clearness));
+    // No floor of one star: a closed overcast night shows none.
+    const starCount = Math.round(segmentArea * baseStarDensity * clearness);
+    if (starCount === 0) return;
 
     const points = generatePoints(starCount, segmentBounds, undefined, 30, rng);
     const transformedPoints = transformPointsDenserAtTop(points, segmentBounds, 4);
@@ -496,33 +499,6 @@ export function drawStars(
 
   ctx.restore();
 }
-
-const CLOUD_DRAW_FNS: Record<
-  Exclude<CloudType, 'none'>,
-  (
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    coverageAt: (x: number) => number,
-    rng: () => number,
-    floorAt?: (x: number) => number,
-  ) => void
-> = {
-  cumulus: drawCumulus,
-  stratocumulus: drawStratocumulus,
-  stratus: drawStratus,
-  cirrus: drawCirrus,
-  cumulonimbus: drawCumulonimbus,
-};
-
-// Back (high altitude) → front (low altitude).
-const RENDER_ORDER: Exclude<CloudType, 'none'>[] = [
-  'cirrus',
-  'stratus',
-  'stratocumulus',
-  'cumulus',
-  'cumulonimbus',
-];
 
 export function drawClouds(
   canvas: HTMLCanvasElement,
@@ -551,20 +527,49 @@ export function drawClouds(
     return ((t - firstTime) / timeRange) * width;
   };
 
-  // One coverage envelope per cloud type across the whole strip: each hour
-  // contributes that type's inferred coverage, or 0 if absent. Night hours
-  // included — they feed correct interpolation right up to the sun boundary.
-  // Each type then renders once as a continuous field, so changing weather
-  // reads as layers waxing and waning rather than per-condition blocks.
-  const envelopes = new Map<Exclude<CloudType, 'none'>, CoveragePoint[]>();
-  for (const type of RENDER_ORDER) envelopes.set(type, []);
+  // Coverage envelopes across the whole strip: each hour contributes its
+  // inferred coverage, or 0 if absent. Night hours included — they feed
+  // correct interpolation right up to the sun boundary. Each layer then
+  // renders once as a continuous field, so changing weather reads as layers
+  // waxing and waning rather than per-condition blocks.
+  //
+  // Stratus and stratocumulus render as one deck: their sum is its coverage
+  // and the stratocumulus share its lumpiness. Wetness greys it for rain.
+  const env = {
+    cirrus: [] as CoveragePoint[],
+    deck: [] as CoveragePoint[],
+    lump: [] as CoveragePoint[],
+    wet: [] as CoveragePoint[],
+    cumulus: [] as CoveragePoint[],
+    cumulonimbus: [] as CoveragePoint[],
+  };
   for (let i = 0; i < forecast.length; i++) {
-    const layerCoverage = inferCloudLayerCoverage(forecast, i, false);
+    const c = inferCloudLayerCoverage(forecast, i, false);
     const x = hourX(i);
-    for (const type of RENDER_ORDER) {
-      envelopes.get(type)?.push({ x, v: layerCoverage[type] ?? 0 });
-    }
+    const st = c.stratus ?? 0;
+    const sc = c.stratocumulus ?? 0;
+    const cu = c.cumulus ?? 0;
+    const cb = c.cumulonimbus ?? 0;
+    // Inference splits the low band between forms and can lose coverage in
+    // the split; scale the forms back up so together they cover what the
+    // forecast reports — a 95% sky must not render as 66%.
+    const low = st + sc + cu + cb;
+    const scale = low > 0.02 ? Math.max(1, lowCloudTotal(forecast[i]) / low) : 1;
+    env.cirrus.push({ x, v: c.cirrus ?? 0 });
+    env.deck.push({ x, v: Math.min(1, (st + sc) * scale) });
+    env.lump.push({ x, v: st + sc > 0.01 ? sc / (st + sc) : 0.5 });
+    env.wet.push({ x, v: wetness(forecast[i]) });
+    env.cumulus.push({ x, v: Math.min(1, cu * scale) });
+    env.cumulonimbus.push({ x, v: cb });
   }
+  const interp = {
+    cirrus: makeCoverageInterpolator(env.cirrus),
+    deck: makeCoverageInterpolator(env.deck),
+    lump: makeCoverageInterpolator(env.lump),
+    wet: makeCoverageInterpolator(env.wet),
+    cumulus: makeCoverageInterpolator(env.cumulus),
+    cumulonimbus: makeCoverageInterpolator(env.cumulonimbus),
+  };
 
   const dayIntervals = getDaylightIntervals(forecast, sunTimes, width);
 
@@ -595,19 +600,59 @@ export function drawClouds(
     const offCtx = offscreen.getContext('2d');
     if (!offCtx) continue;
 
-    for (const type of RENDER_ORDER) {
-      const interp = makeCoverageInterpolator(envelopes.get(type) ?? []);
-      const coverageAt = (localX: number): number => interp(localX + day.start);
-      if (sampleCoverageStats(coverageAt, intervalW).max < 0.01) continue;
+    // Seed by the interval's ordinal, not its pixel bounds: a full-day
+    // interval has day.end === width, so a width-based seed re-randomised
+    // the entire cloud field on every pixel of a resize (clouds visibly
+    // popping in and out). The ordinal is width-independent, so resizing
+    // now just rescales the same clouds.
+    const rngFor = (type: string) => createRng(`clouds-${type}-${di}`);
+    const local = (f: (x: number) => number) => (localX: number) => f(localX + day.start);
+    const floorAt = local(floorAtWorld);
+    const has = (f: (x: number) => number): boolean =>
+      sampleCoverageStats(f, intervalW).max >= 0.01;
 
-      // Seed by the interval's ordinal, not its pixel bounds: a full-day
-      // interval has day.end === width, so a width-based seed re-randomised
-      // the entire cloud field on every pixel of a resize (clouds visibly
-      // popping in and out). The ordinal is width-independent, so resizing
-      // now just rescales the same clouds.
-      const rng = createRng(`clouds-${type}-${di}`);
-      const floorAt = (localX: number): number => floorAtWorld(localX + day.start);
-      CLOUD_DRAW_FNS[type](offCtx, intervalW, intervalH, coverageAt, rng, floorAt);
+    // Opaque layers share one coverage mask, so each front layer only tops up
+    // the sky the layers behind it left open.
+    const mask = createMask(intervalW, intervalH);
+    if (!mask) continue;
+
+    const deckAt = local(interp.deck);
+    const cumulusAt = local(interp.cumulus);
+    if (has(deckAt)) {
+      drawDeck(offCtx, intervalW, intervalH, deckAt, rngFor('deck'), floorAt, {
+        lumpAt: local(interp.lump),
+        wetAt: local(interp.wet),
+        mask,
+      });
+    }
+    if (has(cumulusAt)) {
+      drawCumulus(offCtx, intervalW, intervalH, cumulusAt, rngFor('cumulus'), floorAt, {
+        mask,
+        // Fill to the combined low-cloud target: the deck and the puffs split
+        // one sky, so the puffs make up whatever the deck didn't cover.
+        targetAt: (x) => targetPixelCoverage(Math.min(1, deckAt(x) + cumulusAt(x))),
+      });
+    }
+    const cbAt = local(interp.cumulonimbus);
+    if (has(cbAt)) {
+      drawCumulonimbus(offCtx, intervalW, intervalH, cbAt, rngFor('cumulonimbus'));
+    }
+
+    // Cirrus is translucent high cloud: it never counts as coverage and sits
+    // behind everything, so it is composited underneath last.
+    const cirrusAt = local(interp.cirrus);
+    if (has(cirrusAt)) {
+      const high = document.createElement('canvas');
+      high.width = intervalW;
+      high.height = intervalH;
+      const highCtx = high.getContext('2d');
+      if (highCtx) {
+        drawCirrus(highCtx, intervalW, intervalH, cirrusAt, rngFor('cirrus'), floorAt);
+        offCtx.save();
+        offCtx.globalCompositeOperation = 'destination-over';
+        offCtx.drawImage(high, 0, 0);
+        offCtx.restore();
+      }
     }
 
     ctx.drawImage(offscreen, day.start, 0);
